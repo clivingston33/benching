@@ -1,0 +1,27 @@
+from __future__ import annotations
+
+from benchmark.benchmarkctl import benchmark_settings, load_yaml, parse_stream_body, resolve
+
+
+def test_provider_configs_have_distinct_api_models() -> None:
+    config = load_yaml()
+    assert benchmark_settings(config) == ("terminal-bench", "2.1", "deepseek-v4-flash-0731")
+    kourier = config["providers"]["kourier"]
+    electronhub = config["providers"]["electronhub"]
+    assert kourier["api_model"] == "DSV4-Flash-0731"
+    assert electronhub["api_model"] == "deepseek-v4-flash-0731:dev"
+    assert kourier["api_model"] != electronhub["api_model"]
+
+
+def test_resolve_uses_configured_api_model() -> None:
+    config = load_yaml()
+    endpoint, api_model = resolve("electronhub", config["providers"]["electronhub"])
+    assert endpoint == "https://api.electronhub.ai/v1"
+    assert api_model == "deepseek-v4-flash-0731:dev"
+
+
+def test_stream_validation_detects_content_and_usage() -> None:
+    body = b'data: {"choices":[{"delta":{"content":"OK"}}]}\n\ndata: {"usage":{"prompt_tokens":2}}\n\ndata: [DONE]\n\n'
+    first_content, usage = parse_stream_body(body)
+    assert first_content is True
+    assert usage == {"prompt_tokens": 2}
