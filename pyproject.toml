@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "provider-benchmark"
+version = "1.0.0"
+description = "Reproducible Terminal-Bench 2.1 provider benchmarking harness"
+requires-python = ">=3.12"
+dependencies = [
+  "PyYAML>=6.0,<7",
+  "tokenizers>=0.20,<1",
+]
+
+[project.scripts]
+benchmarkctl = "benchmark.benchmarkctl:main"
+benchmark-analyze = "analytics.analyze:main"
+
+[tool.setuptools.packages.find]
+include = ["benchmark*", "proxy*", "analytics*", "agents*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

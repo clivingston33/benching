@@ -1,0 +1,26 @@
+schema_version: 1
+benchmark:
+  name: terminal-bench
+  version: "2.1"
+  model: deepseek-v4-flash-0731
+providers:
+  kourier:
+    enabled: true
+    env_file: config/kourier.env
+    auth_env: KOURIER_API_KEY
+    base_url: https://api.kourier.sh/v1
+    api_model: DSV4-Flash-0731
+    api_type: openai
+    api: openai-completions
+    plan: null
+    cache_support: false
+  electronhub:
+    enabled: true
+    env_file: config/electronhub.env
+    auth_env: ELECTRONHUB_API_KEY
+    base_url: https://api.electronhub.ai/v1
+    api_model: deepseek-v4-flash-0731:dev
+    api_type: openai
+    api: openai-completions
+    plan: dev_coding
+    cache_support: false

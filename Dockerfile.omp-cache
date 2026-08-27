@@ -1,0 +1,2 @@
+FROM scratch
+COPY omp-17.1.3 /omp-17.1.3

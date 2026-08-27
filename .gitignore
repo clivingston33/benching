@@ -1,0 +1,11 @@
+config/*.env
+!config/*.env.example
+config/legacy/
+__pycache__/
+.pytest_cache/
+.venv/
+*.egg-info/
+runs/
+cache/
+run-logs/
+reports/
