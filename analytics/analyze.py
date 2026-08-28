@@ -129,6 +129,7 @@ def normalize(run: dict[str, Any], raw: list[dict[str, Any]], tokenizer: Any) ->
             "agent_invocation_id": row.get("agent_invocation_id"),
             "provider": row.get("provider") or run.get("provider"),
             "provider_plan": row.get("provider_plan") or run.get("provider_plan"),
+            "provider_plan_tier": row.get("provider_plan_tier") or run.get("provider_plan_tier", "unknown"),
             "provider_request_id": row.get("provider_request_id"),
             "benchmark_model": row.get("benchmark_model") or run.get("benchmark_model"),
             "api_model": row.get("model") or run.get("api_model"),
@@ -218,6 +219,7 @@ def summarize(run: dict[str, Any], rows: list[dict[str, Any]], run_dir: Path) ->
     return {
         "provider": run.get("provider"),
         "provider_plan": run.get("provider_plan"),
+        "provider_plan_tier": run.get("provider_plan_tier", "unknown"),
         "benchmark_model": run.get("benchmark_model"),
         "api_model": run.get("api_model"),
         "requests": len(rows),

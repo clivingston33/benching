@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from benchmark.concurrency_probe import run_probe
 
 ROOT = Path(__file__).resolve().parents[1]
 os.environ["PATH"] = str(Path.home() / ".local/bin") + os.pathsep + os.environ.get("PATH", "")
@@ -190,6 +191,7 @@ def run_directory(options: RunOptions, config: dict[str, Any], endpoint: str, ap
         "agent": "agents.instrumented_omp_agent:InstrumentedOmpAgent",
         "provider": options.provider,
         "provider_plan": config.get("plan"),
+        "provider_plan_tier": config.get("plan_tier", "unknown"),
         "endpoint": endpoint,
         "api_model": api_model,
         "reasoning": False,
@@ -210,7 +212,7 @@ def run_directory(options: RunOptions, config: dict[str, Any], endpoint: str, ap
     }
     run["environment_fingerprint"] = fingerprint(run)
     (directory / "run.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
-    routes = {options.provider: {"upstream": endpoint, "plan": config.get("plan")}}
+    routes = {options.provider: {"upstream": endpoint, "plan": config.get("plan"), "plan_tier": config.get("plan_tier", "unknown")}}
     (directory / "proxy-routes.json").write_text(json.dumps(routes, indent=2) + "\n", encoding="utf-8")
     (directory / "status.json").write_text(json.dumps({"status": "created", "updated_at_utc": utc()}, indent=2) + "\n", encoding="utf-8")
     return directory
@@ -454,6 +456,17 @@ def run_one(options: RunOptions) -> Path:
         stop_process(proxy)
 
 
+def probe_concurrency(name: str) -> None:
+    root_config, config = provider_config(name)
+    endpoint, api_model = resolve(name, config)
+    validate_provider(name)
+    key = parse_env(ROOT / str(config["env_file"])).get(str(config["auth_env"]))
+    if not key:
+        raise SystemExit(f"missing credential: {config['auth_env']}")
+    summary_path, jsonl_path = run_probe(name, config, endpoint, api_model, key, RUNS)
+    print(json.dumps({"summary": str(summary_path), "requests": str(jsonl_path)}, indent=2))
+
+
 def compare(providers: list[str], mode: str, model: str, concurrency: int, trials: int) -> None:
     directories = [run_one(RunOptions(provider=provider, mode=mode, benchmark_model=model, concurrency=concurrency, trials=trials)) for provider in providers]
     subprocess.run([sys.executable, str(ROOT / "analytics" / "analyze.py"), *(str(path) for path in directories)], cwd=ROOT, check=True)
@@ -476,6 +489,8 @@ def main() -> None:
     compare_parser.add_argument("--trials", type=int, default=DEFAULT_TRIALS)
     validate = commands.add_parser("validate")
     validate.add_argument("--provider", required=True, choices=("kourier", "electronhub"))
+    probe_parser = commands.add_parser("probe-concurrency")
+    probe_parser.add_argument("--provider", required=True, choices=("kourier", "electronhub"))
     commands.add_parser("prepare-tokenizer")
     args = parser.parse_args()
     if args.command in {"smoke", "full"}:
@@ -485,12 +500,13 @@ def main() -> None:
         if sorted(providers) != ["electronhub", "kourier"]:
             raise SystemExit("V1 compare requires exactly kourier,electronhub")
         compare(providers, args.mode, args.benchmark_model, args.concurrency, args.trials)
+    elif args.command == "probe-concurrency":
+        probe_concurrency(args.provider)
     elif args.command == "prepare-tokenizer":
         config = load_yaml()["providers"]["kourier"]
         print(json.dumps(ensure_tokenizer(config), indent=2))
     else:
         validate_provider(args.provider)
-
 
 if __name__ == "__main__":
     main()

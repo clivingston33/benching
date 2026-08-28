@@ -155,6 +155,7 @@ class Proxy:
             "started_at_utc": started_at,
             "provider": None,
             "provider_plan": None,
+            "provider_plan_tier": "unknown",
             "run_id": None,
             "task_id": None,
             "trial_id": None,
@@ -222,6 +223,7 @@ class Proxy:
                 raise ValueError(f"unknown benchmark provider: {provider}")
             state["provider"] = provider
             state["provider_plan"] = route.get("plan")
+            state["provider_plan_tier"] = route.get("plan_tier", "unknown")
             state["run_id"] = headers.pop("x-benchmark-run-id", None)
             state["task_id"] = headers.pop("x-benchmark-task", None)
             state["trial_id"] = headers.pop("x-benchmark-trial", None)
