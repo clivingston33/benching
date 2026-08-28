@@ -9,7 +9,7 @@ import statistics
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from tokenizers import Tokenizer
 
 ROOT = Path(__file__).resolve().parents[1]
 BUCKETS = ((0, 4096, "0-4K"), (4096, 16384, "4K-16K"), (16384, 32768, "16K-32K"), (32768, 65536, "32K-64K"), (65536, math.inf, "64K+"))
@@ -74,19 +74,18 @@ def distribution(values: list[float]) -> dict[str, Any]:
     }
 
 
-def local_tokenizer(path: str | None) -> Any:
+def local_tokenizer(path: str | None) -> Tokenizer | None:
     if not path:
         return None
+    tokenizer_path = Path(path)
+    if tokenizer_path.is_dir():
+        tokenizer_path /= "tokenizer.json"
+    if not tokenizer_path.is_file():
+        return None
     try:
-        from transformers import AutoTokenizer
-        return AutoTokenizer.from_pretrained(path, local_files_only=True)
+        return Tokenizer.from_file(str(tokenizer_path))
     except Exception:
-        try:
-            from tokenizers import Tokenizer
-            tokenizer_path = Path(path) / "tokenizer.json" if Path(path).is_dir() else Path(path)
-            return Tokenizer.from_file(str(tokenizer_path))
-        except Exception:
-            return None
+        return None
 
 
 def local_count(tokenizer: Any, text: str, truncated: bool) -> int | None:
