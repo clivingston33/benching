@@ -29,11 +29,14 @@ cp config/electronhub.env.example config/electronhub.env
 chmod 600 config/kourier.env config/electronhub.env
 ```
 
-Set provider credentials and endpoints in the environment files. API model IDs are configured in `config/providers.yaml` after live provider discovery.
+Provider credentials and endpoint overrides stay in the environment files. API model IDs are configured in `config/providers.yaml` after live discovery.
+
+The analyzer uses the pinned official tokenizer repository `deepseek-ai/DeepSeek-V4-Flash-0731` at revision `7872f01b1d1fe23eabc4c98b48bffcef5a386062`. Prepare the cache once with `benchmarkctl prepare-tokenizer`; benchmark runs use `local_files_only=True` and never update it. `DEEPSEEK_V4_TOKENIZER` remains an optional local-cache override.
 
 ## Commands
 
 ```bash
+benchmarkctl prepare-tokenizer
 benchmarkctl validate --provider kourier
 benchmarkctl validate --provider electronhub
 benchmarkctl smoke --provider kourier
@@ -73,7 +76,7 @@ Effective TPS = locally counted output tokens / end-to-end latency seconds
 CV = standard_deviation / mean
 ```
 
-Provider-reported usage is stored separately from locally calculated output tokens. Local tokenization requires an exact DeepSeek tokenizer JSON path supplied by `DEEPSEEK_V4_TOKENIZER` or `benchmark-analyze --tokenizer`; otherwise local-token metrics are explicitly unavailable.
+Provider-reported usage is stored separately from locally calculated output tokens. Local tokenization uses `transformers.AutoTokenizer` with `local_files_only=True` against the pinned official cache. If the exact tokenizer is unavailable or output capture is truncated, local-token metrics are explicitly unavailable.
 
 Cache metrics are never estimated. Missing provider cache fields remain unavailable.
 
@@ -87,7 +90,7 @@ Terminal-Bench 2.1 -> Harbor -> OMP -> canonical proxy -> provider HTTPS API
 analytics/analyze.py -> metrics.jsonl and comparison JSON
 ```
 
-The proxy forwards streams transparently, supports chunked/gzip responses, routes only to trusted controller-generated upstreams, and records task/trial correlation headers without forwarding them upstream.
+The proxy forwards streams transparently, supports chunked/gzip responses, routes only to trusted controller-generated upstreams, and records task/trial correlation headers without forwarding them upstream. It records downstream cancellation separately from provider stream failure.
 
 ## Scope limits
 
