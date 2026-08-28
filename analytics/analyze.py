@@ -78,17 +78,23 @@ def local_tokenizer(path: str | None) -> Any:
     if not path:
         return None
     try:
-        from tokenizers import Tokenizer
-        return Tokenizer.from_file(path)
+        from transformers import AutoTokenizer
+        return AutoTokenizer.from_pretrained(path, local_files_only=True)
     except Exception:
-        return None
+        try:
+            from tokenizers import Tokenizer
+            tokenizer_path = Path(path) / "tokenizer.json" if Path(path).is_dir() else Path(path)
+            return Tokenizer.from_file(str(tokenizer_path))
+        except Exception:
+            return None
 
 
 def local_count(tokenizer: Any, text: str, truncated: bool) -> int | None:
     if tokenizer is None or truncated:
         return None
     try:
-        return len(tokenizer.encode(text, add_special_tokens=False).ids)
+        encoded = tokenizer.encode(text, add_special_tokens=False)
+        return len(encoded.ids) if hasattr(encoded, "ids") else len(encoded)
     except Exception:
         return None
 
@@ -112,6 +118,8 @@ def normalize(run: dict[str, Any], raw: list[dict[str, Any]], tokenizer: Any) ->
             key: metric(tokens.get(key), "reported" if tokens.get(key) is not None else "unavailable")
             for key in ("input_provider", "output_provider", "total_provider", "cache_read", "cache_write")
         }
+        downstream_cancelled = bool(row.get("downstream_cancelled")) or row.get("error_type") == "downstream_disconnect"
+        provider_failure = bool(row.get("provider_failure"))
         normalized = {
             "schema_version": 1,
             "run_id": row.get("run_id") or run.get("run_id"),
@@ -138,6 +146,10 @@ def normalize(run: dict[str, Any], raw: list[dict[str, Any]], tokenizer: Any) ->
             "reliability": {
                 "success": bool(row.get("success")),
                 "stream_completed": bool(row.get("stream_completed")),
+                "downstream_cancelled": downstream_cancelled,
+                "provider_failure": provider_failure,
+                "provider_stream_failure": provider_failure and not downstream_cancelled,
+                "incomplete_provider_stream": not bool(row.get("stream_completed")) and not downstream_cancelled,
                 "http_status": row.get("http_status"),
                 "finish_reason": row.get("finish_reason"),
                 "timeout": row.get("error_type") in {"TimeoutError", "asyncio.TimeoutError"} or row.get("http_status") in {408, 504},
@@ -200,6 +212,9 @@ def summarize(run: dict[str, Any], rows: list[dict[str, Any]], run_dir: Path) ->
     success = sum(1 for row in rows if row["reliability"]["success"])
     streams = sum(1 for row in rows if row["reliability"]["stream_completed"])
     errors = len(rows) - success
+    downstream_cancelled = sum(1 for row in rows if row["reliability"]["downstream_cancelled"])
+    provider_failures = sum(1 for row in rows if row["reliability"]["provider_stream_failure"])
+    incomplete_provider_streams = sum(1 for row in rows if row["reliability"]["incomplete_provider_stream"])
     return {
         "provider": run.get("provider"),
         "provider_plan": run.get("provider_plan"),
@@ -211,6 +226,9 @@ def summarize(run: dict[str, Any], rows: list[dict[str, Any]], run_dir: Path) ->
             "stream_completion_rate": streams / len(rows) if rows else None,
             "http_error_rate": sum(1 for row in rows if isinstance(row["reliability"].get("http_status"), int) and row["reliability"]["http_status"] >= 400) / len(rows) if rows else None,
             "timeout_rate": sum(1 for row in rows if row["reliability"]["timeout"]) / len(rows) if rows else None,
+            "provider_failures": provider_failures,
+            "downstream_cancellations": downstream_cancelled,
+            "incomplete_provider_streams": incomplete_provider_streams,
             "errors": errors,
         },
         "timing": {
@@ -246,12 +264,25 @@ def context_buckets(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "failure_rate": sum(1 for row in selected if not row["reliability"]["success"]) / len(selected) if selected else None,
         }
     return output
+def tokenizer_identity(run: dict[str, Any]) -> tuple[Any, Any]:
+    info = run.get("tokenizer") if isinstance(run.get("tokenizer"), dict) else {}
+    return info.get("repo"), info.get("revision")
+
+
+def tokenizer_path_from_run(run: dict[str, Any]) -> str | None:
+    info = run.get("tokenizer") if isinstance(run.get("tokenizer"), dict) else {}
+    path = info.get("local_cache")
+    return path if isinstance(path, str) and path else None
+
+
 def compatible(runs: list[dict[str, Any]]) -> None:
-    fields = ("benchmark", "benchmark_version", "benchmark_model", "reasoning", "streaming", "concurrency", "trials", "proxy_schema_version", "tokenizer_path", "tasks")
+    fields = ("benchmark", "benchmark_version", "benchmark_model", "reasoning", "streaming", "concurrency", "trials", "proxy_schema_version", "tasks")
     for field in fields:
         values_for_field = {json.dumps(run.get(field), sort_keys=True) for run in runs}
         if len(values_for_field) != 1:
             raise SystemExit(f"incompatible runs: {field}")
+    if len({tokenizer_identity(run) for run in runs}) != 1:
+        raise SystemExit("incompatible runs: tokenizer identity")
     providers = [run.get("provider") for run in runs]
     if sorted(providers) != ["electronhub", "kourier"]:
         raise SystemExit("comparison requires exactly kourier and electronhub runs")
@@ -265,7 +296,7 @@ def main() -> None:
     run_data = [read_json(path / "run.json") for path in args.runs]
     if len(run_data) > 1:
         compatible(run_data)
-    tokenizer_path = args.tokenizer or next((run.get("tokenizer_path") for run in run_data if run.get("tokenizer_path")), None)
+    tokenizer_path = args.tokenizer or next((tokenizer_path_from_run(run) for run in run_data if tokenizer_path_from_run(run)), None)
     tokenizer = local_tokenizer(tokenizer_path)
     summaries = []
     for run_dir, run in zip(args.runs, run_data):
@@ -278,7 +309,7 @@ def main() -> None:
         "created_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "benchmark": "Terminal-Bench 2.1",
         "benchmark_model": run_data[0].get("benchmark_model"),
-        "tokenizer": {"path": tokenizer_path, "source": "calculated" if tokenizer is not None else "unavailable"},
+        "tokenizer": run_data[0].get("tokenizer") or {"repo": "deepseek-ai/DeepSeek-V4-Flash-0731", "revision": "7872f01b1d1fe23eabc4c98b48bffcef5a386062", "local_cache": tokenizer_path, "source": "huggingface" if tokenizer is not None else "unavailable"},
         "formulas": {
             "ttft_ms": "first_content_output - request_started",
             "decode_duration_ms": "last_content_output - first_content_output",

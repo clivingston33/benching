@@ -181,6 +181,8 @@ class Proxy:
             "http_status": None,
             "success": False,
             "stream_completed": False,
+            "downstream_cancelled": False,
+            "provider_failure": False,
             "error_type": None,
             "error_message": None,
             "request_body": None,
@@ -256,6 +258,7 @@ class Proxy:
                 async with self.lock:
                     self.inflight[provider] -= 1
         except Exception as exc:
+            state["provider_failure"] = True
             state["error_type"] = type(exc).__name__
             state["error_message"] = redact(str(exc))
             state["completed_at_utc"] = utc()
@@ -415,12 +418,15 @@ class Proxy:
             state["output_text"] = "".join(output_parts)
             state["stream_completed"] = True
             state["success"] = isinstance(state["http_status"], int) and state["http_status"] < 400
+            state["provider_failure"] = not state["success"]
             if last_content is not None:
                 state["timing"]["last_content_output_ms"] = round((last_content - start) * 1000, 3)
             state["timing"]["stream_completed_ms"] = round((completed - start) * 1000, 3)
             state["completed_at_utc"] = utc()
             await self.events.emit(state)
         except (BrokenPipeError, ConnectionResetError, asyncio.CancelledError):
+            state["downstream_cancelled"] = True
+            state["provider_failure"] = False
             state["error_type"] = "downstream_disconnect"
             state["error_message"] = "client disconnected during upstream stream"
             state["timing"]["stream_completed_ms"] = round((time.monotonic() - start) * 1000, 3)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from analytics.analyze import compatible, distribution, normalize
+from analytics.analyze import compatible, distribution, local_count, local_tokenizer, normalize
 
 
 class FakeEncoding:
@@ -54,14 +54,23 @@ def test_truncated_output_makes_local_metrics_unavailable() -> None:
 
 
 def test_compatibility_allows_different_api_model_ids() -> None:
-    common = {"benchmark": "terminal-bench", "benchmark_version": "2.1", "benchmark_model": "deepseek-v4-flash-0731", "reasoning": False, "streaming": True, "concurrency": 1, "trials": 1, "proxy_schema_version": 1, "tokenizer_path": None, "tasks": ["task-1"]}
+    common = {"benchmark": "terminal-bench", "benchmark_version": "2.1", "benchmark_model": "deepseek-v4-flash-0731", "reasoning": False, "streaming": True, "concurrency": 1, "trials": 1, "proxy_schema_version": 1, "tokenizer": {"repo": "deepseek-ai/DeepSeek-V4-Flash-0731", "revision": "rev"}, "tasks": ["task-1"]}
     compatible([{**common, "provider": "kourier", "api_model": "DSV4-Flash-0731"}, {**common, "provider": "electronhub", "api_model": "deepseek-v4-flash-0731:dev"}])
 
 
 def test_compatibility_rejects_different_canonical_models() -> None:
-    common = {"benchmark": "terminal-bench", "benchmark_version": "2.1", "reasoning": False, "streaming": True, "concurrency": 1, "trials": 1, "proxy_schema_version": 1, "tokenizer_path": None, "tasks": ["task-1"]}
+    common = {"benchmark": "terminal-bench", "benchmark_version": "2.1", "reasoning": False, "streaming": True, "concurrency": 1, "trials": 1, "proxy_schema_version": 1, "tokenizer": {"repo": "deepseek-ai/DeepSeek-V4-Flash-0731", "revision": "rev"}, "tasks": ["task-1"]}
     with pytest.raises(SystemExit, match="benchmark_model"):
         compatible([{**common, "benchmark_model": "model-a", "provider": "kourier"}, {**common, "benchmark_model": "model-b", "provider": "electronhub"}])
+
+
+def test_local_tokenizer_override_counts_exact_tokens(tmp_path) -> None:
+    from tokenizers import Tokenizer, models
+    path = tmp_path / "tokenizer.json"
+    Tokenizer(models.WordLevel({"hello": 0, "[UNK]": 1}, unk_token="[UNK]")).save(str(path))
+    tokenizer = local_tokenizer(str(path))
+    assert tokenizer is not None
+    assert local_count(tokenizer, "hello", False) == 1
 
 
 def test_distribution_reports_percentiles_and_cv() -> None:
@@ -70,3 +79,12 @@ def test_distribution_reports_percentiles_and_cv() -> None:
     assert result["median"] == 2.5
     assert result["p95"] == 3.85
     assert result["cv"] is not None
+def test_downstream_cancel_is_not_provider_failure() -> None:
+    row = raw_row()
+    row.update({"stream_completed": False, "downstream_cancelled": True, "provider_failure": False, "error_type": "downstream_disconnect"})
+    normalized = normalize({"run_id": "run-1", "provider": "electronhub", "benchmark_model": "deepseek-v4-flash-0731", "api_model": "deepseek-v4-flash-0731:dev"}, [row], None)[0]
+    reliability = normalized["reliability"]
+    assert reliability["downstream_cancelled"] is True
+    assert reliability["provider_failure"] is False
+    assert reliability["provider_stream_failure"] is False
+    assert reliability["incomplete_provider_stream"] is False
