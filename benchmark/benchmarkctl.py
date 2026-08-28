@@ -50,7 +50,6 @@ class RunOptions:
 
 
 
-
 def load_yaml() -> dict[str, Any]:
     try:
         import yaml
@@ -163,11 +162,11 @@ def ensure_tokenizer(config: dict[str, Any], values: dict[str, str] | None = Non
     return metadata
 
 
-
-
 def tokenizer_cache_path(metadata: dict[str, Any]) -> str | None:
     path = metadata.get("local_cache")
     return str(path) if isinstance(path, str) and path else None
+
+
 def fingerprint(run: dict[str, Any]) -> str:
     encoded = json.dumps(run, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
