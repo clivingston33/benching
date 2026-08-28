@@ -12,6 +12,11 @@ def test_provider_configs_have_distinct_api_models() -> None:
     assert electronhub["api_model"] == "deepseek-v4-flash-0731:dev"
     assert kourier["api_model"] != electronhub["api_model"]
 
+def test_plan_tiers_are_not_inferred() -> None:
+    config = load_yaml()
+    assert config["providers"]["kourier"]["plan_tier"] == "unknown"
+    assert config["providers"]["electronhub"]["plan_tier"] == "unknown"
+
 
 def test_resolve_uses_configured_api_model() -> None:
     config = load_yaml()

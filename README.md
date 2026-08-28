@@ -17,6 +17,7 @@ Reproducible Terminal-Bench 2.1 comparison of Kourier and ElectronHub Dev/Coding
 - Harbor retries: 0
 
 The canonical benchmark model identifies the model being compared. `api_model` is the provider-facing identifier and may differ by provider.
+Plan tiers are recorded explicitly. ElectronHub and Kourier remain `unknown` until account metadata or a verified provider response confirms the tier; observed capacity is not used to infer plan tier.
 
 ## Setup
 
@@ -39,15 +40,18 @@ The analyzer uses the pinned official tokenizer repository `deepseek-ai/DeepSeek
 benchmarkctl prepare-tokenizer
 benchmarkctl validate --provider kourier
 benchmarkctl validate --provider electronhub
-benchmarkctl smoke --provider kourier
+benchmarkctl probe-concurrency --provider kourier
+benchmarkctl probe-concurrency --provider electronhub
 benchmarkctl smoke --provider electronhub
+benchmarkctl smoke --provider kourier
 benchmarkctl full --provider kourier
 benchmarkctl full --provider electronhub
-benchmarkctl compare --providers kourier,electronhub
+benchmarkctl compare --providers kourier,electronhub --concurrency 1
 ```
 
 Validation is authoritative. Smoke and full runs refuse to start when provider preflight fails.
 
+The probe stages 2, 3, 5, and one optional 6-stream test, stopping at the first rejected stage. It uses direct provider streaming requests, records 429/`Retry-After`, and never affects Terminal-Bench scores. Plan tiers remain `unknown` until confirmed by provider account metadata.
 ## Run artifacts
 
 Each run is isolated under `runs/<run-id>/`:
