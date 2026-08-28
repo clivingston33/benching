@@ -11,50 +11,14 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from benchmark._util import stream_summary, utc
 
 PROMPT = "Reply with a short numbered list of 120 simple words."
 MAX_TOKENS = 256
 
 
-def utc() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
-
-def has_content(value: Any) -> bool:
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if str(key).lower() in {"content", "text", "reasoning", "reasoning_content", "thinking"} and isinstance(item, str) and item:
-                return True
-            if isinstance(item, (dict, list)) and has_content(item):
-                return True
-    elif isinstance(value, list):
-        return any(has_content(item) for item in value)
-    return False
-
-
 def parse_stream(body: bytes) -> tuple[bool, str | None, dict[str, Any] | None]:
-    first_content = False
-    finish_reason: str | None = None
-    usage: dict[str, Any] | None = None
-    for line in body.decode("utf-8", "replace").splitlines():
-        if not line.startswith("data:"):
-            continue
-        payload = line[5:].strip()
-        if payload == "[DONE]":
-            continue
-        try:
-            event = json.loads(payload)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(event, dict):
-            continue
-        first_content = first_content or has_content(event)
-        if isinstance(event.get("usage"), dict):
-            usage = event["usage"]
-        for choice in event.get("choices", []) if isinstance(event.get("choices"), list) else []:
-            if isinstance(choice, dict) and choice.get("finish_reason") is not None:
-                finish_reason = str(choice["finish_reason"])
-    return first_content, finish_reason, usage
+    return stream_summary(body)
 
 
 def one_request(provider: str, plan: str | None, tier: str, endpoint: str, api_model: str, key: str, requested: int, index: int, barrier: threading.Barrier) -> dict[str, Any]:

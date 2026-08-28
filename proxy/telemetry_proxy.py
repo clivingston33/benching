@@ -11,10 +11,10 @@ import time
 import uuid
 import zlib
 from collections import defaultdict
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+from benchmark._util import redact, utc
 
 MAX_REQUEST_LINE = 16 * 1024
 MAX_HEADERS = 128 * 1024
@@ -29,25 +29,6 @@ BENCHMARK_HEADERS = {
     "x-benchmark-agent-invocation-id",
 }
 
-
-def utc() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
-
-def redact(value: str | None) -> str | None:
-    if value is None:
-        return None
-    import re
-
-    patterns = (
-        (r"(?i)(authorization\s*:\s*(?:bearer\s+)?)[^\s,;\"]+", r"\1[REDACTED]"),
-        (r"(?i)(api[_-]?key\s*[:=]\s*)[^\s,;\"]+", r"\1[REDACTED]"),
-        (r"(?i)(x-api-key\s*[:=]\s*)[^\s,;\"]+", r"\1[REDACTED]"),
-        (r"(?i)(token\s*[:=]\s*)[^\s,;\"]+", r"\1[REDACTED]"),
-    )
-    for pattern, replacement in patterns:
-        value = re.sub(pattern, replacement, value)
-    return value
 
 
 class JsonlWriter:

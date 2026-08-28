@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from benchmark.concurrency_probe import run_probe
+from benchmark._util import redact, stream_summary, utc
 
 ROOT = Path(__file__).resolve().parents[1]
 os.environ["PATH"] = str(Path.home() / ".local/bin") + os.pathsep + os.environ.get("PATH", "")
@@ -49,8 +49,6 @@ class RunOptions:
     trials: int = DEFAULT_TRIALS
 
 
-def utc() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def load_yaml() -> dict[str, Any]:
@@ -295,49 +293,15 @@ def set_status(directory: Path, status: str, **extra: Any) -> None:
 
 
 def sanitized(text: str, limit: int = 4096) -> str:
-    import re
-    text = re.sub(r"(?i)(authorization\s*:\s*(?:bearer\s+)?|api[_-]?key\s*[:=]\s*|token\s*[:=]\s*)[^\s,;\"]+", r"\1[REDACTED]", text)
-    return text[:limit]
+    return redact(text, limit) or ""
 
 
 def provider_request_id(headers: Any) -> str | None:
     return headers.get("x-request-id") or headers.get("request-id")
 
 
-def has_stream_content(value: Any) -> bool:
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if str(key).lower() in {"content", "text", "reasoning_content", "reasoning", "thinking"} and isinstance(item, str) and item:
-                return True
-            if isinstance(item, (dict, list)) and has_stream_content(item):
-                return True
-    elif isinstance(value, list):
-        return any(has_stream_content(item) for item in value)
-    return False
-
-
 def parse_stream_body(body: bytes) -> tuple[bool, dict[str, Any] | None]:
-    first_content = False
-    usage: dict[str, Any] | None = None
-    for raw in body.decode("utf-8", "replace").splitlines():
-        if raw.startswith("data:"):
-            payload = raw[5:].strip()
-            if payload == "[DONE]":
-                continue
-            try:
-                event = json.loads(payload)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(event, dict):
-                continue
-            first_content = first_content or has_stream_content(event)
-            if isinstance(event.get("usage"), dict):
-                usage = event["usage"]
-            for choice in event.get("choices", []) if isinstance(event.get("choices"), list) else []:
-                if isinstance(choice, dict):
-                    delta = choice.get("delta") or {}
-                    if isinstance(delta, dict) and delta.get("content"):
-                        first_content = True
+    first_content, _, usage = stream_summary(body)
     return first_content, usage
 
 
