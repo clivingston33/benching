@@ -32,6 +32,9 @@ DEFAULT_MODEL = "deepseek-v4-flash-0731"
 DEFAULT_CONCURRENCY = 1
 DEFAULT_TRIALS = 1
 PROXY_PORT = 8765
+TOKENIZER_REPO = "deepseek-ai/DeepSeek-V4-Flash-0731"
+TOKENIZER_REVISION = "7872f01b1d1fe23eabc4c98b48bffcef5a386062"
+TOKENIZER_CACHE = Path.home() / ".cache" / "provider-benchmark" / "deepseek-v4-flash-0731"
 
 
 @dataclass(frozen=True)
@@ -128,6 +131,41 @@ def environment(config: dict[str, Any]) -> dict[str, str]:
     return env
 
 
+def tokenizer_metadata(config: dict[str, Any]) -> dict[str, Any]:
+    env_path = parse_env(ROOT / str(config["env_file"])).get("DEEPSEEK_V4_TOKENIZER")
+    local_cache = Path(env_path).expanduser() if env_path else TOKENIZER_CACHE
+    available = (local_cache / "tokenizer.json").is_file() and (local_cache / "config.json").is_file() if local_cache.is_dir() else local_cache.is_file()
+    return {
+        "repo": TOKENIZER_REPO,
+        "revision": TOKENIZER_REVISION,
+        "source": "huggingface" if available else "unavailable",
+        "local_cache": str(local_cache),
+    }
+
+
+def ensure_tokenizer(config: dict[str, Any]) -> dict[str, Any]:
+    metadata = tokenizer_metadata(config)
+    if metadata["source"] == "huggingface":
+        return metadata
+    try:
+        from huggingface_hub import snapshot_download
+        snapshot_download(
+            repo_id=TOKENIZER_REPO,
+            revision=TOKENIZER_REVISION,
+            local_dir=metadata["local_cache"],
+            allow_patterns=["tokenizer.json", "tokenizer_config.json", "config.json"],
+        )
+    except Exception as exc:
+        raise SystemExit(f"official tokenizer unavailable: {exc}") from exc
+    metadata = tokenizer_metadata(config)
+    if metadata["source"] != "huggingface":
+        raise SystemExit("official tokenizer download completed without tokenizer.json")
+    return metadata
+
+
+def tokenizer_cache_path(metadata: dict[str, Any]) -> str | None:
+    path = metadata.get("local_cache")
+    return str(path) if isinstance(path, str) and path else None
 def fingerprint(run: dict[str, Any]) -> str:
     encoded = json.dumps(run, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -168,7 +206,7 @@ def run_directory(options: RunOptions, config: dict[str, Any], endpoint: str, ap
         "cpu": platform.processor(),
         "proxy_schema_version": 1,
         "proxy_port": PROXY_PORT,
-        "tokenizer_path": parse_env(ROOT / str(config["env_file"])).get("DEEPSEEK_V4_TOKENIZER") or os.environ.get("DEEPSEEK_V4_TOKENIZER"),
+        "tokenizer": tokenizer_metadata(config),
     }
     run["environment_fingerprint"] = fingerprint(run)
     (directory / "run.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
@@ -303,21 +341,38 @@ def parse_stream_body(body: bytes) -> tuple[bool, dict[str, Any] | None]:
 
 def validation_request(url: str, key: str, api_model: str) -> dict[str, Any]:
     payload = json.dumps({"model": api_model, "messages": [{"role": "user", "content": "Reply with OK."}], "max_tokens": 4, "stream": True}).encode()
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "text/event-stream", "User-Agent": "provider-benchmark/1.0"}
     started = time.monotonic()
-    result: dict[str, Any] = {"url": url, "api_model": api_model, "stream": True, "streaming": False, "first_content": False, "usage": None}
+    result: dict[str, Any] = {"url": url, "api_model": api_model, "stream": True, "user_agent": "provider-benchmark/1.0", "streaming": False, "first_content": False, "usage": None}
     try:
         with urlopen(Request(url, data=payload, headers=headers), timeout=90) as response:
             body = response.read()
-            result.update(status=response.status, duration_ms=round((time.monotonic() - started) * 1000, 3), bytes=len(body), content_type=response.headers.get("content-type"), provider_request_id=provider_request_id(response.headers))
+            result.update(status=response.status, duration_ms=round((time.monotonic() - started) * 1000, 3), bytes=len(body), content_type=response.headers.get("content-type"), provider_request_id=provider_request_id(response.headers), server=response.headers.get("server"), cf_ray=response.headers.get("cf-ray"), via=response.headers.get("via"), http_version="unknown")
             result["streaming"] = "text/event-stream" in (response.headers.get("content-type", "").lower())
             result["first_content"], result["usage"] = parse_stream_body(body)
     except HTTPError as error:
         body = error.read().decode("utf-8", "replace")
-        result.update(status=error.code, duration_ms=round((time.monotonic() - started) * 1000, 3), provider_request_id=provider_request_id(error.headers), error_body=sanitized(body))
+        result.update(status=error.code, duration_ms=round((time.monotonic() - started) * 1000, 3), provider_request_id=provider_request_id(error.headers), server=error.headers.get("server"), cf_ray=error.headers.get("cf-ray"), via=error.headers.get("via"), http_version="unknown", error_body=sanitized(body))
     except (URLError, TimeoutError, OSError) as error:
         result.update(status=None, duration_ms=round((time.monotonic() - started) * 1000, 3), error_type=type(getattr(error, "reason", error)).__name__, error_body=sanitized(str(error)))
     return result
+
+
+def classify_validation(result: dict[str, Any]) -> str:
+    status = result.get("status")
+    if status in {401, 403}:
+        if result.get("cf_ray") or str(result.get("server", "")).lower() == "cloudflare":
+            return "edge_access_denied"
+        return "authentication_failure"
+    if status == 404:
+        return "not_found"
+    if status == 429:
+        return "rate_limited"
+    if status is None:
+        return "network_failure"
+    if isinstance(status, int) and status >= 500:
+        return "provider_internal_error"
+    return "provider_response"
 
 
 def validate_provider(name: str) -> Path:
@@ -343,9 +398,13 @@ def validate_provider(name: str) -> Path:
             with urlopen(Request(endpoint + "/models", headers={"Authorization": f"Bearer {key}"}), timeout=30) as response:
                 catalog = json.loads(response.read())
                 result["models"] = {"status": response.status, "catalog_count": len(catalog.get("data", [])) if isinstance(catalog, dict) and isinstance(catalog.get("data"), list) else None}
+        except HTTPError as error:
+            result["models"] = {"status": error.code, "error_body": sanitized(error.read().decode("utf-8", "replace")), "server": error.headers.get("server"), "cf_ray": error.headers.get("cf-ray")}
         except Exception as error:
             result["models"] = {"status": None, "error_body": sanitized(str(error))}
     result["chat_completions"] = validation_request(endpoint + "/chat/completions", key, api_model)
+    result["error_class"] = classify_validation(result["chat_completions"])
+    result["models_error_class"] = classify_validation(result["models"]) if isinstance(result.get("models"), dict) and result["models"].get("status") is not None else None
     result["success"] = result["chat_completions"].get("status") == 200 and result["chat_completions"].get("streaming") and result["chat_completions"].get("first_content")
     output = RUNS / f"validation-{name}-{datetime.now(UTC):%Y%m%d-%H%M%S}.json"
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -364,6 +423,9 @@ def run_one(options: RunOptions) -> Path:
     if (options.benchmark, options.benchmark_version, options.benchmark_model) != (benchmark_name, benchmark_version, benchmark_model):
         raise SystemExit("benchmark configuration does not match providers.yaml")
     endpoint, api_model = resolve(options.provider, config)
+    tokenizer = tokenizer_metadata(config)
+    if tokenizer["source"] != "huggingface":
+        raise SystemExit("official tokenizer is not cached; run benchmarkctl prepare-tokenizer")
     validate_provider(options.provider)
     tasks = task_names(options.mode)
     directory = run_directory(options, config, endpoint, api_model, tasks)
@@ -414,6 +476,7 @@ def main() -> None:
     compare_parser.add_argument("--trials", type=int, default=DEFAULT_TRIALS)
     validate = commands.add_parser("validate")
     validate.add_argument("--provider", required=True, choices=("kourier", "electronhub"))
+    commands.add_parser("prepare-tokenizer")
     args = parser.parse_args()
     if args.command in {"smoke", "full"}:
         run_one(RunOptions(provider=args.provider, mode=args.command, benchmark_model=args.benchmark_model, concurrency=args.concurrency, trials=args.trials))
@@ -422,6 +485,9 @@ def main() -> None:
         if sorted(providers) != ["electronhub", "kourier"]:
             raise SystemExit("V1 compare requires exactly kourier,electronhub")
         compare(providers, args.mode, args.benchmark_model, args.concurrency, args.trials)
+    elif args.command == "prepare-tokenizer":
+        config = load_yaml()["providers"]["kourier"]
+        print(json.dumps(ensure_tokenizer(config), indent=2))
     else:
         validate_provider(args.provider)
 
