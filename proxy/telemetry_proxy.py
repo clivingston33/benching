@@ -251,6 +251,10 @@ class Proxy:
                     state["request_body"] = redact_json(request_json)
             except (json.JSONDecodeError, UnicodeDecodeError):
                 state["request_body"] = "<non-json>"
+            if isinstance(request_json, dict):
+                request_json["reasoning"] = {"enabled": False}
+                body = json.dumps(request_json, separators=(",", ":")).encode("utf-8")
+                headers["content-length"] = str(len(body))
             async with self.lock:
                 state["active_requests_at_start"] = self.inflight[provider]
                 self.inflight[provider] += 1
