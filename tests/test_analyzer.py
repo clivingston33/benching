@@ -73,6 +73,10 @@ def test_local_tokenizer_override_counts_exact_tokens(tmp_path) -> None:
     assert local_count(tokenizer, "hello", False) == 1
 
 
+
+def test_missing_local_tokenizer_is_unavailable(tmp_path) -> None:
+    assert local_tokenizer(str(tmp_path / "missing-tokenizer.json")) is None
+
 def test_distribution_reports_percentiles_and_cv() -> None:
     result = distribution([1.0, 2.0, 3.0, 4.0])
     assert result["count"] == 4

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from benchmark.benchmarkctl import benchmark_settings, classify_validation, load_yaml, parse_stream_body, resolve
+from benchmark.benchmarkctl import RunOptions, benchmark_settings, classify_validation, harbor_command, load_yaml, parse_stream_body, resolve
 
 
 def test_provider_configs_have_distinct_api_models() -> None:
@@ -11,6 +11,37 @@ def test_provider_configs_have_distinct_api_models() -> None:
     assert kourier["api_model"] == "DSV4-Flash-0731"
     assert electronhub["api_model"] == "deepseek-v4-flash-0731:dev"
     assert kourier["api_model"] != electronhub["api_model"]
+
+
+def test_harbor_command_preserves_agent_kwargs(tmp_path, monkeypatch) -> None:
+    import benchmark.benchmarkctl as ctl
+
+    monkeypatch.setattr(ctl, "executable", lambda name: name)
+    command = harbor_command(
+        RunOptions("kourier", "smoke"),
+        {"auth_env": "KOURIER_API_KEY", "api": "openai-completions", "plan": None},
+        "https://api.kourier.sh/v1",
+        "DSV4-Flash-0731",
+        "deepseek-v4-flash-0731",
+        tmp_path,
+        ["task-1"],
+    )
+    kwargs = [command[index + 1] for index, value in enumerate(command) if value == "--agent-kwarg"]
+    assert kwargs == [
+        "provider=kourier",
+        "provider_plan=",
+        "benchmark_model=deepseek-v4-flash-0731",
+        "model=DSV4-Flash-0731",
+        "upstream=https://api.kourier.sh/v1",
+        "api_key_env=KOURIER_API_KEY",
+        f"run_id={tmp_path.name}",
+        "proxy_url=http://host.docker.internal:8765",
+        "api=openai-completions",
+        "reasoning=false",
+        "max_tokens=49152",
+        "context_window=262144",
+    ]
+
 
 def test_plan_tiers_are_not_inferred() -> None:
     config = load_yaml()

@@ -84,16 +84,16 @@ def parse_env(path: Path) -> dict[str, str]:
     return values
 
 
-def provider_config(name: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    config = load_yaml()
+def provider_config(name: str, root_config: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+    config = root_config or load_yaml()
     value = config["providers"].get(name)
     if not isinstance(value, dict) or not value.get("enabled", False):
         raise SystemExit(f"provider is not enabled: {name}")
     return config, value
 
 
-def resolve(name: str, config: dict[str, Any]) -> tuple[str, str]:
-    values = parse_env(ROOT / str(config["env_file"]))
+def resolve(name: str, config: dict[str, Any], values: dict[str, str] | None = None) -> tuple[str, str]:
+    values = values if values is not None else parse_env(ROOT / str(config["env_file"]))
     prefix = name.upper().replace("-", "_")
     endpoint = values.get(f"{prefix}_BASE_URL") or config.get("base_url") or config.get("endpoint")
     api_model = values.get(f"{prefix}_API_MODEL") or config.get("api_model")
@@ -122,16 +122,17 @@ def executable(name: str) -> str:
     return path
 
 
-def environment(config: dict[str, Any]) -> dict[str, str]:
+def environment(config: dict[str, Any], values: dict[str, str] | None = None) -> dict[str, str]:
     env = os.environ.copy()
-    env.update(parse_env(ROOT / str(config["env_file"])))
+    env.update(values if values is not None else parse_env(ROOT / str(config["env_file"])))
     env["PYTHONPATH"] = str(ROOT) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     env["PATH"] = str(Path.home() / ".local/bin") + os.pathsep + env.get("PATH", "")
     return env
 
 
-def tokenizer_metadata(config: dict[str, Any]) -> dict[str, Any]:
-    env_path = parse_env(ROOT / str(config["env_file"])).get("DEEPSEEK_V4_TOKENIZER")
+def tokenizer_metadata(config: dict[str, Any], values: dict[str, str] | None = None) -> dict[str, Any]:
+    values = values if values is not None else parse_env(ROOT / str(config["env_file"]))
+    env_path = values.get("DEEPSEEK_V4_TOKENIZER")
     local_cache = Path(env_path).expanduser() if env_path else TOKENIZER_CACHE
     available = (local_cache / "tokenizer.json").is_file() and (local_cache / "config.json").is_file() if local_cache.is_dir() else local_cache.is_file()
     return {
@@ -142,8 +143,8 @@ def tokenizer_metadata(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def ensure_tokenizer(config: dict[str, Any]) -> dict[str, Any]:
-    metadata = tokenizer_metadata(config)
+def ensure_tokenizer(config: dict[str, Any], values: dict[str, str] | None = None) -> dict[str, Any]:
+    metadata = tokenizer_metadata(config, values)
     if metadata["source"] == "huggingface":
         return metadata
     try:
@@ -156,10 +157,12 @@ def ensure_tokenizer(config: dict[str, Any]) -> dict[str, Any]:
         )
     except Exception as exc:
         raise SystemExit(f"official tokenizer unavailable: {exc}") from exc
-    metadata = tokenizer_metadata(config)
+    metadata = tokenizer_metadata(config, values)
     if metadata["source"] != "huggingface":
         raise SystemExit("official tokenizer download completed without tokenizer.json")
     return metadata
+
+
 
 
 def tokenizer_cache_path(metadata: dict[str, Any]) -> str | None:
@@ -170,13 +173,21 @@ def fingerprint(run: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def run_directory(options: RunOptions, config: dict[str, Any], endpoint: str, api_model: str, tasks: list[str]) -> Path:
+def run_directory(
+    options: RunOptions,
+    config: dict[str, Any],
+    endpoint: str,
+    api_model: str,
+    tasks: list[str],
+    root_config: dict[str, Any] | None = None,
+    env_values: dict[str, str] | None = None,
+) -> Path:
     RUNS.mkdir(parents=True, exist_ok=True)
     run_id = f"tb21-v1-{options.provider}-{options.mode}-{datetime.now(UTC):%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:8]}"
     directory = RUNS / run_id
     directory.mkdir(parents=False)
     (directory / "harbor").mkdir()
-    benchmark_name, benchmark_version, benchmark_model = benchmark_settings(load_yaml())
+    benchmark_name, benchmark_version, benchmark_model = benchmark_settings(root_config or load_yaml())
     run = {
         "schema_version": 1,
         "run_id": run_id,
@@ -206,7 +217,7 @@ def run_directory(options: RunOptions, config: dict[str, Any], endpoint: str, ap
         "cpu": platform.processor(),
         "proxy_schema_version": 1,
         "proxy_port": PROXY_PORT,
-        "tokenizer": tokenizer_metadata(config),
+        "tokenizer": tokenizer_metadata(config, env_values),
     }
     run["environment_fingerprint"] = fingerprint(run)
     (directory / "run.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
@@ -239,17 +250,23 @@ def harbor_command(options: RunOptions, config: dict[str, Any], endpoint: str, a
         "--agent-include-logs", "**/*",
         "--mounts", json.dumps([{"type": "bind", "source": str(ROOT / "cache"), "target": "/opt/provider-benchmark", "read_only": True}]),
         "--extra-docker-compose", str(directory / "docker-host-gateway.yaml"),
-        "--agent-kwarg", f"provider={options.provider}",
-        "--agent-kwarg", f"provider_plan={config.get('plan') or ''}",
-        "--agent-kwarg", f"benchmark_model={benchmark_model}",
-        "--agent-kwarg", f"model={api_model}",
-        "--agent-kwarg", f"upstream={endpoint}",
-        "--agent-kwarg", f"api_key_env={config['auth_env']}",
-        "--agent-kwarg", f"run_id={directory.name}",
-        "--agent-kwarg", f"proxy_url=http://host.docker.internal:{PROXY_PORT}",
-        "--agent-kwarg", f"api={config.get('api', 'openai-completions')}",
-        "--agent-kwarg", "reasoning=false", "--agent-kwarg", "max_tokens=49152", "--agent-kwarg", "context_window=262144",
     ]
+    agent_kwargs = {
+        "provider": options.provider,
+        "provider_plan": config.get("plan") or "",
+        "benchmark_model": benchmark_model,
+        "model": api_model,
+        "upstream": endpoint,
+        "api_key_env": config["auth_env"],
+        "run_id": directory.name,
+        "proxy_url": f"http://host.docker.internal:{PROXY_PORT}",
+        "api": config.get("api", "openai-completions"),
+        "reasoning": "false",
+        "max_tokens": "49152",
+        "context_window": "262144",
+    }
+    for key, value in agent_kwargs.items():
+        command.extend(["--agent-kwarg", f"{key}={value}"])
     for task in tasks:
         command.extend(["--include-task-name", task])
     return command
@@ -341,10 +358,18 @@ def classify_validation(result: dict[str, Any]) -> str:
     return "provider_response"
 
 
-def validate_provider(name: str) -> Path:
-    root_config, config = provider_config(name)
-    endpoint, api_model = resolve(name, config)
-    key = parse_env(ROOT / str(config["env_file"])).get(str(config["auth_env"]))
+def validate_provider(
+    name: str,
+    root_config: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
+    env_values: dict[str, str] | None = None,
+) -> Path:
+    if config is None:
+        root_config, config = provider_config(name, root_config)
+    assert root_config is not None
+    env_values = env_values if env_values is not None else parse_env(ROOT / str(config["env_file"]))
+    endpoint, api_model = resolve(name, config, env_values)
+    key = env_values.get(str(config["auth_env"]))
     if not key:
         raise SystemExit(f"missing credential: {config['auth_env']}")
     result: dict[str, Any] = {"schema_version": 1, "provider": name, "provider_plan": config.get("plan"), "benchmark_model": benchmark_settings(root_config)[2], "api_model": api_model, "base_url": endpoint, "models": None}
@@ -382,23 +407,24 @@ def validate_provider(name: str) -> Path:
     return output
 
 
-def run_one(options: RunOptions) -> Path:
+def run_one(options: RunOptions, root_config: dict[str, Any] | None = None) -> Path:
     executable("docker")
-    root_config, config = provider_config(options.provider)
+    root_config, config = provider_config(options.provider, root_config)
+    values = parse_env(ROOT / str(config["env_file"]))
     benchmark_name, benchmark_version, benchmark_model = benchmark_settings(root_config)
     if (options.benchmark, options.benchmark_version, options.benchmark_model) != (benchmark_name, benchmark_version, benchmark_model):
         raise SystemExit("benchmark configuration does not match providers.yaml")
-    endpoint, api_model = resolve(options.provider, config)
-    tokenizer = tokenizer_metadata(config)
+    endpoint, api_model = resolve(options.provider, config, values)
+    tokenizer = tokenizer_metadata(config, values)
     if tokenizer["source"] != "huggingface":
         raise SystemExit("official tokenizer is not cached; run benchmarkctl prepare-tokenizer")
-    validate_provider(options.provider)
+    validate_provider(options.provider, root_config, config, values)
     tasks = task_names(options.mode)
-    directory = run_directory(options, config, endpoint, api_model, tasks)
+    directory = run_directory(options, config, endpoint, api_model, tasks, root_config, values)
     (directory / "docker-host-gateway.yaml").write_text("services:\n  main:\n    extra_hosts:\n      - host.docker.internal:host-gateway\n", encoding="utf-8")
     command = harbor_command(options, config, endpoint, api_model, benchmark_model, directory, tasks)
     (directory / "command.json").write_text(json.dumps(command, indent=2) + "\n", encoding="utf-8")
-    env = environment(config)
+    env = environment(config, values)
     proxy: subprocess.Popen[bytes] | None = None
     try:
         proxy = start_proxy(directory)
@@ -419,20 +445,21 @@ def run_one(options: RunOptions) -> Path:
     finally:
         stop_process(proxy)
 
-
-def probe_concurrency(name: str) -> None:
-    root_config, config = provider_config(name)
-    endpoint, api_model = resolve(name, config)
-    validate_provider(name)
-    key = parse_env(ROOT / str(config["env_file"])).get(str(config["auth_env"]))
+def probe_concurrency(name: str, root_config: dict[str, Any] | None = None) -> None:
+    root_config, config = provider_config(name, root_config)
+    values = parse_env(ROOT / str(config["env_file"]))
+    endpoint, api_model = resolve(name, config, values)
+    validate_provider(name, root_config, config, values)
+    key = values.get(str(config["auth_env"]))
     if not key:
         raise SystemExit(f"missing credential: {config['auth_env']}")
     summary_path, jsonl_path = run_probe(name, config, endpoint, api_model, key, RUNS)
     print(json.dumps({"summary": str(summary_path), "requests": str(jsonl_path)}, indent=2))
 
 
-def compare(providers: list[str], mode: str, model: str, concurrency: int, trials: int) -> None:
-    directories = [run_one(RunOptions(provider=provider, mode=mode, benchmark_model=model, concurrency=concurrency, trials=trials)) for provider in providers]
+def compare(providers: list[str], mode: str, model: str, concurrency: int, trials: int, root_config: dict[str, Any] | None = None) -> None:
+    root_config = root_config or load_yaml()
+    directories = [run_one(RunOptions(provider=provider, mode=mode, benchmark_model=model, concurrency=concurrency, trials=trials), root_config) for provider in providers]
     subprocess.run([sys.executable, str(ROOT / "analytics" / "analyze.py"), *(str(path) for path in directories)], cwd=ROOT, check=True)
 
 
@@ -457,20 +484,22 @@ def main() -> None:
     probe_parser.add_argument("--provider", required=True, choices=("kourier", "electronhub"))
     commands.add_parser("prepare-tokenizer")
     args = parser.parse_args()
+    root_config = load_yaml()
     if args.command in {"smoke", "full"}:
-        run_one(RunOptions(provider=args.provider, mode=args.command, benchmark_model=args.benchmark_model, concurrency=args.concurrency, trials=args.trials))
+        run_one(RunOptions(provider=args.provider, mode=args.command, benchmark_model=args.benchmark_model, concurrency=args.concurrency, trials=args.trials), root_config)
     elif args.command == "compare":
         providers = [value.strip() for value in args.providers.split(",") if value.strip()]
         if sorted(providers) != ["electronhub", "kourier"]:
             raise SystemExit("V1 compare requires exactly kourier,electronhub")
-        compare(providers, args.mode, args.benchmark_model, args.concurrency, args.trials)
+        compare(providers, args.mode, args.benchmark_model, args.concurrency, args.trials, root_config)
     elif args.command == "probe-concurrency":
-        probe_concurrency(args.provider)
+        probe_concurrency(args.provider, root_config)
     elif args.command == "prepare-tokenizer":
-        config = load_yaml()["providers"]["kourier"]
-        print(json.dumps(ensure_tokenizer(config), indent=2))
+        _, config = provider_config("kourier", root_config)
+        values = parse_env(ROOT / str(config["env_file"]))
+        print(json.dumps(ensure_tokenizer(config, values), indent=2))
     else:
-        validate_provider(args.provider)
+        validate_provider(args.provider, root_config)
 
 if __name__ == "__main__":
     main()

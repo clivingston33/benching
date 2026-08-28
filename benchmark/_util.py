@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from typing import Any
 
 _REDACTION_PATTERNS = (
@@ -15,8 +16,6 @@ _REDACTION_PATTERNS = (
 
 
 def utc() -> str:
-    from datetime import UTC, datetime
-
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
