@@ -80,7 +80,7 @@ Effective TPS = locally counted output tokens / end-to-end latency seconds
 CV = standard_deviation / mean
 ```
 
-Provider-reported usage is stored separately from locally calculated output tokens. Local tokenization uses `transformers.AutoTokenizer` with `local_files_only=True` against the pinned official cache. If the exact tokenizer is unavailable or output capture is truncated, local-token metrics are explicitly unavailable.
+Provider-reported usage is stored separately from locally calculated output tokens. Local tokenization uses `tokenizers.Tokenizer` directly against `<tokenizer-cache>/tokenizer.json` with the pinned official cache. If the exact tokenizer is unavailable or output capture is truncated, local-token metrics are explicitly unavailable.
 
 Cache metrics are never estimated. Missing provider cache fields remain unavailable.
 
