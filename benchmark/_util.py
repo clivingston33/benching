@@ -9,7 +9,7 @@ from typing import Any
 
 _REDACTION_PATTERNS = (
     re.compile(r"(authorization\s*:\s*(?:bearer\s+)?)[^\s,;\"]+", re.IGNORECASE),
-    re.compile(r"(api[_-]?key\s*[:=]\s*)[^\s,;\"]+", re.IGNORECASE),
+    re.compile(r"(api[\s_-]?key\s*[:=]\s*)[^\s,;\"]+", re.IGNORECASE),
     re.compile(r"(x-api-key\s*[:=]\s*)[^\s,;\"]+", re.IGNORECASE),
     re.compile(r"(token\s*[:=]\s*)[^\s,;\"]+", re.IGNORECASE),
 )

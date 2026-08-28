@@ -22,9 +22,9 @@ async def _fake_reader(request: bytes) -> asyncio.StreamReader:
 
 
 def test_redaction_removes_common_credentials() -> None:
-    value = redact("Authorization: Bearer secret api_key=other x-api-key: third token=fourth")
+    value = redact("Authorization: Bearer secret api_key=other API key: fifth x-api-key: third token=fourth")
     assert value is not None
-    assert "secret" not in value and "other" not in value and "third" not in value and "fourth" not in value
+    assert all(secret not in value for secret in ("secret", "other", "fifth", "third", "fourth"))
 
 
 def test_jsonl_is_parseable(tmp_path: Path) -> None:
