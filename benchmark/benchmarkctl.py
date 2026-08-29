@@ -47,6 +47,7 @@ class RunOptions:
     benchmark_model: str = DEFAULT_MODEL
     concurrency: int = DEFAULT_CONCURRENCY
     trials: int = DEFAULT_TRIALS
+    proxy_port: int = PROXY_PORT
 
 
 
@@ -215,7 +216,7 @@ def run_directory(
         "kernel": platform.release(),
         "cpu": platform.processor(),
         "proxy_schema_version": 1,
-        "proxy_port": PROXY_PORT,
+        "proxy_port": options.proxy_port,
         "tokenizer": tokenizer_metadata(config, env_values),
     }
     run["environment_fingerprint"] = fingerprint(run)
@@ -258,7 +259,7 @@ def harbor_command(options: RunOptions, config: dict[str, Any], endpoint: str, a
         "upstream": endpoint,
         "api_key_env": config["auth_env"],
         "run_id": directory.name,
-        "proxy_url": f"http://host.docker.internal:{PROXY_PORT}",
+        "proxy_url": f"http://host.docker.internal:{options.proxy_port}",
         "api": config.get("api", "openai-completions"),
         "reasoning": "false",
         "max_tokens": "49152",
@@ -271,15 +272,15 @@ def harbor_command(options: RunOptions, config: dict[str, Any], endpoint: str, a
     return command
 
 
-def start_proxy(directory: Path) -> subprocess.Popen[bytes]:
-    command = [sys.executable, "-m", "proxy.telemetry_proxy", "--events", str(directory / "raw.jsonl"), "--routes", str(directory / "proxy-routes.json"), "--port", str(PROXY_PORT)]
+def start_proxy(directory: Path, port: int = PROXY_PORT) -> subprocess.Popen[bytes]:
+    command = [sys.executable, "-m", "proxy.telemetry_proxy", "--events", str(directory / "raw.jsonl"), "--routes", str(directory / "proxy-routes.json"), "--port", str(port)]
     stdout = (directory / "proxy.stdout.log").open("wb")
     stderr = (directory / "proxy.stderr.log").open("wb")
     process = subprocess.Popen(command, cwd=ROOT, env={**os.environ, "PYTHONPATH": str(ROOT)}, stdout=stdout, stderr=stderr, start_new_session=True)
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         try:
-            with socket.create_connection(("127.0.0.1", PROXY_PORT), timeout=0.2):
+            with socket.create_connection(("127.0.0.1", port), timeout=0.2):
                 stdout.close(); stderr.close()
                 return process
         except OSError:
@@ -426,7 +427,7 @@ def run_one(options: RunOptions, root_config: dict[str, Any] | None = None) -> P
     env = environment(config, values)
     proxy: subprocess.Popen[bytes] | None = None
     try:
-        proxy = start_proxy(directory)
+        proxy = start_proxy(directory, options.proxy_port)
         set_status(directory, "running", pid=None)
         with (directory / "harbor.stdout.log").open("wb") as stdout, (directory / "harbor.stderr.log").open("wb") as stderr:
             process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=stdout, stderr=stderr, start_new_session=True)
@@ -457,8 +458,18 @@ def probe_concurrency(name: str, root_config: dict[str, Any] | None = None) -> N
 
 
 def compare(providers: list[str], mode: str, model: str, concurrency: int, trials: int, root_config: dict[str, Any] | None = None) -> None:
+    import concurrent.futures
     root_config = root_config or load_yaml()
-    directories = [run_one(RunOptions(provider=provider, mode=mode, benchmark_model=model, concurrency=concurrency, trials=trials), root_config) for provider in providers]
+    base_port = PROXY_PORT
+    directories: list[Path] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(providers), thread_name_prefix="compare") as pool:
+        futures = {
+            pool.submit(run_one, RunOptions(provider=provider, mode=mode, benchmark_model=model, concurrency=concurrency, trials=trials, proxy_port=base_port + index), root_config): index
+            for index, provider in enumerate(providers)
+        }
+        for future in concurrent.futures.as_completed(futures):
+            directories.append(future.result())
+    directories.sort(key=lambda d: d.name)
     subprocess.run([sys.executable, str(ROOT / "analytics" / "analyze.py"), *(str(path) for path in directories)], cwd=ROOT, check=True)
 
 
