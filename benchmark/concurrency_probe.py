@@ -122,18 +122,14 @@ def simultaneous(provider: str, plan: str | None, tier: str, endpoint: str, api_
     }
 
 
-def run_probe(provider: str, config: dict[str, Any], endpoint: str, api_model: str, key: str, output_dir: Path) -> tuple[Path, Path]:
+def run_probe(provider: str, config: dict[str, Any], endpoint: str, api_model: str, key: str, output_dir: Path, stages: tuple[int, ...] = (2, 3, 5, 6)) -> tuple[Path, Path]:
     plan = config.get("plan")
     tier = str(config.get("plan_tier", "unknown"))
     tested: list[dict[str, Any]] = []
-    for requested in (2, 3, 5, 6):
+    for index, requested in enumerate(stages):
         stage = simultaneous(provider, plan, tier, endpoint, api_model, key, requested)
         tested.append(stage)
-        if requested == 2 and not stage["all_streams_successful"]:
-            break
-        if requested == 3 and not stage["all_streams_successful"]:
-            break
-        if requested == 5 and not stage["all_streams_successful"]:
+        if not stage["all_streams_successful"] and index < len(stages) - 1:
             break
     successful_stages = [stage["requested_concurrency"] for stage in tested if stage["all_streams_successful"]]
     rejected_stages = [stage for stage in tested if not stage["all_streams_successful"]]

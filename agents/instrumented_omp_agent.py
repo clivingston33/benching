@@ -50,7 +50,8 @@ class InstrumentedOmpAgent(BaseInstalledAgent):
 
     @override
     async def install(self, environment: BaseEnvironment) -> None:
-        await self.exec_as_root(environment, "set -euo pipefail; if [ -x /opt/provider-benchmark/omp-17.1.3 ]; then install -m 755 /opt/provider-benchmark/omp-17.1.3 /usr/local/bin/omp; else apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y curl ca-certificates; curl -fsSL https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/install.sh | sh -s -- --binary --ref v" + shlex.quote(self.omp_version) + "; install -m 755 /root/.local/bin/omp /usr/local/bin/omp; fi; omp --version")
+        cached = f"/opt/provider-benchmark/omp-{self.omp_version}"
+        await self.exec_as_root(environment, "set -euo pipefail; if [ -x " + shlex.quote(cached) + " ]; then install -m 755 " + shlex.quote(cached) + " /usr/local/bin/omp; else apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y curl ca-certificates; curl -fsSL https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/install.sh | sh -s -- --binary --ref v" + shlex.quote(self.omp_version) + "; install -m 755 /root/.local/bin/omp /usr/local/bin/omp; fi; omp --version")
         await self.exec_as_agent(environment, "set -euo pipefail; mkdir -p $HOME/.omp/agent; omp --version")
 
     @staticmethod

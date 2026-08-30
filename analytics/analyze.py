@@ -284,10 +284,6 @@ def compatible(runs: list[dict[str, Any]]) -> None:
             raise SystemExit(f"incompatible runs: {field}")
     if len({tokenizer_identity(run) for run in runs}) != 1:
         raise SystemExit("incompatible runs: tokenizer identity")
-    providers = [run.get("provider") for run in runs]
-    if sorted(providers) != ["electronhub", "kourier"]:
-        raise SystemExit("comparison requires exactly kourier and electronhub runs")
-
 
 def main() -> None:
     parser = argparse.ArgumentParser()

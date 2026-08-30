@@ -12,7 +12,7 @@ providers:
     api_model: DSV4-Flash-0731
     api: openai-completions
     plan: null
-    plan_tier: unknown
+    plan_tier: omega
   electronhub:
     enabled: true
     env_file: config/electronhub.env
@@ -20,5 +20,6 @@ providers:
     base_url: https://api.electronhub.ai/v1
     api_model: deepseek-v4-flash-0731:dev
     api: openai-completions
+    strict_model_check: true
     plan: dev_coding
-    plan_tier: unknown
+    plan_tier: Coding Plan (DevPass)

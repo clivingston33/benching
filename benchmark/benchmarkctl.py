@@ -30,7 +30,7 @@ TASKS = Path.home() / "terminal-bench-2-1" / "tasks"
 DEFAULT_BENCHMARK = "terminal-bench"
 DEFAULT_BENCHMARK_VERSION = "2.1"
 DEFAULT_MODEL = "deepseek-v4-flash-0731"
-DEFAULT_CONCURRENCY = 1
+DEFAULT_CONCURRENCY = 3
 DEFAULT_TRIALS = 1
 PROXY_PORT = 8765
 TOKENIZER_REPO = "deepseek-ai/DeepSeek-V4-Flash-0731"
@@ -373,14 +373,14 @@ def validate_provider(
     if not key:
         raise SystemExit(f"missing credential: {config['auth_env']}")
     result: dict[str, Any] = {"schema_version": 1, "provider": name, "provider_plan": config.get("plan"), "benchmark_model": benchmark_settings(root_config)[2], "api_model": api_model, "base_url": endpoint, "models": None}
-    if name == "electronhub":
+    if config.get("strict_model_check"):
         try:
             with urlopen(Request(endpoint + "/models", headers={"Authorization": f"Bearer {key}"}), timeout=30) as response:
                 catalog = json.loads(response.read())
                 ids = [item.get("id") for item in catalog.get("data", []) if isinstance(item, dict) and item.get("id")] if isinstance(catalog, dict) else []
                 result["models"] = {"status": response.status, "count": len(ids), "api_model_present": api_model in ids}
                 if api_model not in ids:
-                    raise SystemExit(f"ElectronHub api_model not present in /models: {api_model}")
+                    raise SystemExit(f"{name} api_model not present in /models: {api_model}")
         except HTTPError as error:
             result["models"] = {"status": error.code, "error_body": sanitized(error.read().decode("utf-8", "replace"))}
             raise SystemExit(json.dumps(result, indent=2))
@@ -445,7 +445,7 @@ def run_one(options: RunOptions, root_config: dict[str, Any] | None = None) -> P
     finally:
         stop_process(proxy)
 
-def probe_concurrency(name: str, root_config: dict[str, Any] | None = None) -> None:
+def probe_concurrency(name: str, root_config: dict[str, Any] | None = None, stages: tuple[int, ...] = (2, 3, 5, 6)) -> None:
     root_config, config = provider_config(name, root_config)
     values = parse_env(ROOT / str(config["env_file"]))
     endpoint, api_model = resolve(name, config, values)
@@ -453,7 +453,7 @@ def probe_concurrency(name: str, root_config: dict[str, Any] | None = None) -> N
     key = values.get(str(config["auth_env"]))
     if not key:
         raise SystemExit(f"missing credential: {config['auth_env']}")
-    summary_path, jsonl_path = run_probe(name, config, endpoint, api_model, key, RUNS)
+    summary_path, jsonl_path = run_probe(name, config, endpoint, api_model, key, RUNS, stages)
     print(json.dumps({"summary": str(summary_path), "requests": str(jsonl_path)}, indent=2))
 
 
@@ -474,38 +474,45 @@ def compare(providers: list[str], mode: str, model: str, concurrency: int, trial
 
 
 def main() -> None:
+    root_config = load_yaml()
+    providers = [name for name, cfg in root_config.get("providers", {}).items() if isinstance(cfg, dict) and cfg.get("enabled")]
+    if not providers:
+        raise SystemExit("no enabled providers in config/providers.yaml")
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers(dest="command", required=True)
     for mode in ("smoke", "full"):
         command = commands.add_parser(mode)
-        command.add_argument("--provider", required=True, choices=("kourier", "electronhub"))
+        command.add_argument("--provider", required=True, choices=providers)
         command.add_argument("--model", default=DEFAULT_MODEL, dest="benchmark_model")
         command.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY)
         command.add_argument("--trials", type=int, default=DEFAULT_TRIALS)
     compare_parser = commands.add_parser("compare")
-    compare_parser.add_argument("--providers", default="kourier,electronhub")
+    compare_parser.add_argument("--providers", default=",".join(providers))
     compare_parser.add_argument("--mode", choices=("smoke", "full"), default="full")
     compare_parser.add_argument("--model", default=DEFAULT_MODEL, dest="benchmark_model")
     compare_parser.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY)
     compare_parser.add_argument("--trials", type=int, default=DEFAULT_TRIALS)
     validate = commands.add_parser("validate")
-    validate.add_argument("--provider", required=True, choices=("kourier", "electronhub"))
+    validate.add_argument("--provider", required=True, choices=providers)
     probe_parser = commands.add_parser("probe-concurrency")
-    probe_parser.add_argument("--provider", required=True, choices=("kourier", "electronhub"))
+    probe_parser.add_argument("--provider", required=True, choices=providers)
+    probe_parser.add_argument("--stages", default="2,3,5,6", help="comma-separated concurrency levels to probe")
     commands.add_parser("prepare-tokenizer")
     args = parser.parse_args()
-    root_config = load_yaml()
     if args.command in {"smoke", "full"}:
         run_one(RunOptions(provider=args.provider, mode=args.command, benchmark_model=args.benchmark_model, concurrency=args.concurrency, trials=args.trials), root_config)
     elif args.command == "compare":
-        providers = [value.strip() for value in args.providers.split(",") if value.strip()]
-        if sorted(providers) != ["electronhub", "kourier"]:
-            raise SystemExit("V1 compare requires exactly kourier,electronhub")
-        compare(providers, args.mode, args.benchmark_model, args.concurrency, args.trials, root_config)
+        requested = [value.strip() for value in args.providers.split(",") if value.strip()]
+        if not requested:
+            raise SystemExit("compare requires at least one provider")
+        unknown = [name for name in requested if name not in providers]
+        if unknown:
+            raise SystemExit(f"unknown provider(s): {', '.join(unknown)}")
+        compare(requested, args.mode, args.benchmark_model, args.concurrency, args.trials, root_config)
     elif args.command == "probe-concurrency":
-        probe_concurrency(args.provider, root_config)
+        probe_concurrency(args.provider, root_config, stages=tuple(int(value.strip()) for value in args.stages.split(",") if value.strip()))
     elif args.command == "prepare-tokenizer":
-        _, config = provider_config("kourier", root_config)
+        _, config = provider_config(providers[0], root_config)
         values = parse_env(ROOT / str(config["env_file"]))
         print(json.dumps(ensure_tokenizer(config, values), indent=2))
     else:

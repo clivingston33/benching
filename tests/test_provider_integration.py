@@ -43,10 +43,10 @@ def test_harbor_command_preserves_agent_kwargs(tmp_path, monkeypatch) -> None:
     ]
 
 
-def test_plan_tiers_are_not_inferred() -> None:
+def test_plan_tiers_are_configured_not_inferred() -> None:
     config = load_yaml()
-    assert config["providers"]["kourier"]["plan_tier"] == "unknown"
-    assert config["providers"]["electronhub"]["plan_tier"] == "unknown"
+    assert config["providers"]["kourier"]["plan_tier"] == "omega"
+    assert config["providers"]["electronhub"]["plan_tier"] == "Coding Plan (DevPass)"
 
 
 def test_resolve_uses_configured_api_model() -> None:
