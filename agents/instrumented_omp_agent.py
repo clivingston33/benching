@@ -35,6 +35,7 @@ class InstrumentedOmpAgent(BaseInstalledAgent):
         self.proxy_url = proxy_url.rstrip("/")
         self.api = api
         self.reasoning = str(reasoning).lower() in {"1", "true", "yes", "on"}
+        self.reasoning_mode = str(reasoning).lower()
         self.max_tokens = int(max_tokens)
         self.context_window = int(context_window)
         self.omp_version = omp_version
@@ -78,8 +79,12 @@ class InstrumentedOmpAgent(BaseInstalledAgent):
         task_id = self._metadata_value(metadata, {"task_id", "task_name", "task"}) or session_task
         trial_id = self._metadata_value(metadata, {"trial_id", "trial_name", "trial"}) or session_id or str(getattr(self, "context_id", "unknown"))
         invocation_id = uuid.uuid4().hex
-        headers = {"X-Benchmark-Provider": self.provider, "X-Benchmark-Run-Id": self.run_id, "X-Benchmark-Task": task_id, "X-Benchmark-Trial": trial_id, "X-Benchmark-Agent-Invocation-Id": invocation_id}
-        config = {"providers": {self.provider: {"baseUrl": f"{self.proxy_url}/{self.provider}", "apiKey": f"!printenv {self.api_key_env}", "api": self.api, "headers": headers, "models": [{"id": self.model, "name": self.model, "api": self.api, "reasoning": False, "input": ["text"], "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": self.context_window, "maxTokens": self.max_tokens}]}}}
+        model: dict[str, Any] = {"id": self.model, "name": self.model, "api": self.api, "input": ["text"], "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": self.context_window, "maxTokens": self.max_tokens}
+        if self.reasoning_mode == "enabled":
+            model["reasoning"] = True
+        elif self.reasoning_mode == "disabled":
+            model["reasoning"] = False
+        config = {"providers": {self.provider: {"baseUrl": f"{self.proxy_url}/{self.provider}", "apiKey": f"!printenv {self.api_key_env}", "api": self.api, "headers": headers, "models": [model]}}}
         config_json = shlex.quote(json.dumps(config, separators=(",", ":")))
         prompt_b64 = shlex.quote(base64.b64encode(instruction.encode("utf-8")).decode("ascii"))
         command = "set -euo pipefail; mkdir -p $HOME/.omp/agent /logs/agent/omp/sessions; " + f"printf '%s' {config_json} > $HOME/.omp/agent/models.json; " + f"printf '%s' {prompt_b64} | base64 -d > /tmp/omp-prompt.txt; " + f"omp --print --mode json --model {shlex.quote(self.provider + '/' + self.model)} --auto-approve --no-prewalk --no-extensions --session-dir /logs/agent/omp/sessions @/tmp/omp-prompt.txt > /logs/agent/{self._OUTPUT_FILENAME} 2> /logs/agent/omp.stderr"

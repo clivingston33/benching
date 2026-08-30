@@ -232,7 +232,7 @@ class Proxy:
                     state["request_body"] = redact_json(request_json)
             except (json.JSONDecodeError, UnicodeDecodeError):
                 state["request_body"] = "<non-json>"
-            if isinstance(request_json, dict):
+            if isinstance(request_json, dict) and route.get("reasoning") == "disabled":
                 request_json["reasoning"] = {"enabled": False}
                 body = json.dumps(request_json, separators=(",", ":")).encode("utf-8")
                 headers["content-length"] = str(len(body))
@@ -480,7 +480,7 @@ def load_routes(path: Path) -> dict[str, dict[str, str]]:
         upstream = route.get("upstream")
         if not isinstance(upstream, str) or not upstream.startswith("https://"):
             raise ValueError(f"invalid upstream for {provider}")
-        routes[provider] = {"upstream": upstream, "plan": str(route.get("plan", ""))}
+        routes[provider] = {"upstream": upstream, "plan": str(route.get("plan", "")), "reasoning": str(route.get("reasoning", "default"))}
     return routes
 
 

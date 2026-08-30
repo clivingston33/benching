@@ -3,6 +3,7 @@ benchmark:
   name: terminal-bench
   version: "2.1"
   model: deepseek-v4-flash-0731
+  reasoning: default
 providers:
   kourier:
     enabled: true
@@ -11,8 +12,10 @@ providers:
     base_url: https://api.kourier.sh/v1
     api_model: DSV4-Flash-0731
     api: openai-completions
-    plan: null
-    plan_tier: omega
+    plan: soft_launch
+    plan_tier: null
+    routing_entitlement: omega
+    benchmark_concurrency_limit: 3
   electronhub:
     enabled: true
     env_file: config/electronhub.env

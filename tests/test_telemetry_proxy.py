@@ -59,8 +59,8 @@ def test_usage_preserves_provider_values() -> None:
 
 
 def test_reasoning_disabled_injected_into_forwarded_body(tmp_path: Path) -> None:
-    # The proxy must add reasoning.enabled=false to the JSON body so providers
-    # defaulting to reasoning-on (ElectronHub) match Kourier's behavior.
+    # reasoning: disabled injects reasoning.enabled=false so providers defaulting
+    # to reasoning-on (ElectronHub) match the explicit disabled mode.
     import proxy.telemetry_proxy as mod
 
     captured: dict = {}
@@ -72,7 +72,7 @@ def test_reasoning_disabled_injected_into_forwarded_body(tmp_path: Path) -> None
     original = mod.Proxy.forward
     mod.Proxy.forward = fake_forward
     try:
-        proxy = mod.Proxy(mod.JsonlWriter(Path("/tmp/unused-events.jsonl")), {"electronhub": {"upstream": "https://example.test/v1", "plan": "dev_coding", "plan_tier": "unknown"}})
+        proxy = mod.Proxy(mod.JsonlWriter(Path("/tmp/unused-events.jsonl")), {"electronhub": {"upstream": "https://example.test/v1", "plan": "dev_coding", "plan_tier": "unknown", "reasoning": "disabled"}})
         body = b'{"model":"deepseek-v4-flash-0731:dev","messages":[]}'
         request = b"POST /electronhub/chat/completions HTTP/1.1\r\nX-Benchmark-Provider: electronhub\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
         async def run() -> None:
@@ -82,8 +82,30 @@ def test_reasoning_disabled_injected_into_forwarded_body(tmp_path: Path) -> None
         mod.Proxy.forward = original
     assert captured["body"]["reasoning"] == {"enabled": False}
     assert captured["content_length"] == str(len(json.dumps(captured["body"], separators=(",", ":")).encode()))
-    proxy = Proxy(JsonlWriter(tmp_path / "events.jsonl"), {"kourier": {"upstream": "https://example.test/v1", "plan": "standard"}})
-    assert not hasattr(proxy, "semaphores")
+
+
+def test_reasoning_default_not_injected_into_forwarded_body(tmp_path: Path) -> None:
+    # reasoning: default must not inject any override; the provider behaves normally.
+    import proxy.telemetry_proxy as mod
+
+    captured: dict = {}
+
+    async def fake_forward(self, host, port, method, path, version, headers, body, client, state, start):
+        captured["body"] = json.loads(body)
+        captured["content_length"] = headers.get("content-length")
+
+    original = mod.Proxy.forward
+    mod.Proxy.forward = fake_forward
+    try:
+        proxy = mod.Proxy(mod.JsonlWriter(tmp_path / "events.jsonl"), {"kourier": {"upstream": "https://example.test/v1", "plan": "standard", "reasoning": "default"}})
+        body = b'{"model":"DSV4-Flash-0731","messages":[]}'
+        request = b"POST /kourier/chat/completions HTTP/1.1\r\nX-Benchmark-Provider: kourier\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
+        async def run() -> None:
+            await proxy.handle(await _fake_reader(request), _FakeWriter())
+        asyncio.run(run())
+    finally:
+        mod.Proxy.forward = original
+    assert "reasoning" not in captured["body"]
 
 
 def test_provider_url_joining_never_duplicates_v1() -> None:

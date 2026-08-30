@@ -11,12 +11,15 @@ Reproducible Terminal-Bench 2.1 comparison of Kourier and ElectronHub Dev/Coding
 - ElectronHub Dev API model: `deepseek-v4-flash-0731:dev`
 - Providers: `kourier`, `electronhub`
 - Streaming: required
+- Reasoning: `default` (no override injected; see below)
 - Concurrency: 3
 - Trials per task: 1
 - Harbor retries: 0
 
 The canonical benchmark model identifies the model being compared. `api_model` is the provider-facing identifier and may differ by provider.
-Plan tiers are recorded explicitly in `config/providers.yaml` (Kourier: `omega`, ElectronHub: `Coding Plan (DevPass)`); observed capacity is never used to infer a plan tier.
+Plan and entitlement metadata is recorded explicitly in `config/providers.yaml` (Kourier: plan `soft_launch`, routing entitlement `omega`; ElectronHub: plan `dev_coding`, tier `Coding Plan (DevPass)`); observed capacity is never used to infer a plan tier.
+
+Reasoning is an explicit mode — `default`, `enabled`, or `disabled` — set under `benchmark.reasoning` in `config/providers.yaml` and overridable per-run with `--reasoning`. `default` injects no override, so the provider/model behaves normally; `disabled` makes the proxy inject `reasoning.enabled=false`; `enabled` sets it true. The mode is recorded as `reasoning_mode` in `run.json`.
 
 ## Setup
 
@@ -70,7 +73,9 @@ benchmarkctl smoke --provider electronhub
 benchmarkctl smoke --provider kourier
 benchmarkctl full --provider kourier
 benchmarkctl full --provider electronhub
+
 benchmarkctl compare --providers kourier,electronhub --concurrency 3
+benchmarkctl compare --providers kourier,electronhub --execution parallel --concurrency 3
 ```
 
 Each command:
@@ -80,7 +85,7 @@ Each command:
 - `probe-concurrency --provider <name> [--stages 2,3,5,6]` — stages direct concurrent-stream requests (default `2,3,5,6`) to find the provider's concurrency ceiling, stopping at the first rejected stage; doesn't touch benchmark scores.
 - `smoke --provider <name>` — runs 3 quick Terminal-Bench tasks to confirm the full pipeline works.
 - `full --provider <name>` — runs all 89 tasks; the real benchmark.
-- `compare --providers <a>,<b>` — runs the given mode for one or more providers in parallel, then builds the comparison report. Works with a single provider too.
+- `compare --providers <a>,<b> [--execution sequential|parallel]` — runs the given mode for one or more providers, then builds the comparison report. `sequential` (default) runs providers one at a time so they don't compete for host resources — the official, comparable mode; `parallel` runs them concurrently for informal/faster testing. Works with a single provider too. The comparison JSON records `provider_execution_mode` and sets `official_comparison: false` for parallel runs, so a host-contention run can't be mistaken for an official comparison. `--parallel-providers` remains as an alias for `--execution parallel`.
 
 Validation is authoritative. Smoke and full runs refuse to start when provider preflight fails.
 

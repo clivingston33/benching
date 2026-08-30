@@ -54,12 +54,12 @@ def test_truncated_output_makes_local_metrics_unavailable() -> None:
 
 
 def test_compatibility_allows_different_api_model_ids() -> None:
-    common = {"benchmark": "terminal-bench", "benchmark_version": "2.1", "benchmark_model": "deepseek-v4-flash-0731", "reasoning": False, "streaming": True, "concurrency": 1, "trials": 1, "proxy_schema_version": 1, "tokenizer": {"repo": "deepseek-ai/DeepSeek-V4-Flash-0731", "revision": "rev"}, "tasks": ["task-1"]}
+    common = {"benchmark": "terminal-bench", "benchmark_version": "2.1", "benchmark_model": "deepseek-v4-flash-0731", "reasoning_mode": "default", "streaming": True, "concurrency": 1, "trials": 1, "proxy_schema_version": 1, "tokenizer": {"repo": "deepseek-ai/DeepSeek-V4-Flash-0731", "revision": "rev"}, "tasks": ["task-1"]}
     compatible([{**common, "provider": "kourier", "api_model": "DSV4-Flash-0731"}, {**common, "provider": "electronhub", "api_model": "deepseek-v4-flash-0731:dev"}])
 
 
 def test_compatibility_rejects_different_canonical_models() -> None:
-    common = {"benchmark": "terminal-bench", "benchmark_version": "2.1", "reasoning": False, "streaming": True, "concurrency": 1, "trials": 1, "proxy_schema_version": 1, "tokenizer": {"repo": "deepseek-ai/DeepSeek-V4-Flash-0731", "revision": "rev"}, "tasks": ["task-1"]}
+    common = {"benchmark": "terminal-bench", "benchmark_version": "2.1", "reasoning_mode": "default", "streaming": True, "concurrency": 1, "trials": 1, "proxy_schema_version": 1, "tokenizer": {"repo": "deepseek-ai/DeepSeek-V4-Flash-0731", "revision": "rev"}, "tasks": ["task-1"]}
     with pytest.raises(SystemExit, match="benchmark_model"):
         compatible([{**common, "benchmark_model": "model-a", "provider": "kourier"}, {**common, "benchmark_model": "model-b", "provider": "electronhub"}])
 

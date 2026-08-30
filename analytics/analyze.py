@@ -277,7 +277,7 @@ def tokenizer_path_from_run(run: dict[str, Any]) -> str | None:
 
 
 def compatible(runs: list[dict[str, Any]]) -> None:
-    fields = ("benchmark", "benchmark_version", "benchmark_model", "reasoning", "streaming", "concurrency", "trials", "proxy_schema_version", "tasks")
+    fields = ("benchmark", "benchmark_version", "benchmark_model", "reasoning_mode", "streaming", "concurrency", "trials", "proxy_schema_version", "tasks")
     for field in fields:
         values_for_field = {json.dumps(run.get(field), sort_keys=True) for run in runs}
         if len(values_for_field) != 1:
@@ -288,6 +288,7 @@ def compatible(runs: list[dict[str, Any]]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("runs", nargs="+", type=Path)
+    parser.add_argument("--execution", choices=("sequential", "parallel"), default="sequential", help="how provider runs were scheduled")
     parser.add_argument("--tokenizer", default=None, help="Exact DeepSeek tokenizer JSON path")
     args = parser.parse_args()
     run_data = [read_json(path / "run.json") for path in args.runs]
@@ -306,6 +307,8 @@ def main() -> None:
         "created_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "benchmark": "Terminal-Bench 2.1",
         "benchmark_model": run_data[0].get("benchmark_model"),
+        "provider_execution_mode": args.execution,
+        "official_comparison": args.execution == "sequential",
         "tokenizer": run_data[0].get("tokenizer") or {"repo": "deepseek-ai/DeepSeek-V4-Flash-0731", "revision": "7872f01b1d1fe23eabc4c98b48bffcef5a386062", "local_cache": tokenizer_path, "source": "huggingface" if tokenizer is not None else "unavailable"},
         "formulas": {
             "ttft_ms": "first_content_output - request_started",

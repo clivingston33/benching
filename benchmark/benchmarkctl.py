@@ -45,6 +45,7 @@ class RunOptions:
     benchmark: str = DEFAULT_BENCHMARK
     benchmark_version: str = DEFAULT_BENCHMARK_VERSION
     benchmark_model: str = DEFAULT_MODEL
+    reasoning: str = "default"
     concurrency: int = DEFAULT_CONCURRENCY
     trials: int = DEFAULT_TRIALS
     proxy_port: int = PROXY_PORT
@@ -62,12 +63,13 @@ def load_yaml() -> dict[str, Any]:
     return value
 
 
-def benchmark_settings(config: dict[str, Any]) -> tuple[str, str, str]:
+def benchmark_settings(config: dict[str, Any]) -> tuple[str, str, str, str]:
     settings = config.get("benchmark") if isinstance(config.get("benchmark"), dict) else {}
     return (
         str(settings.get("name", DEFAULT_BENCHMARK)),
         str(settings.get("version", DEFAULT_BENCHMARK_VERSION)),
         str(settings.get("model", DEFAULT_MODEL)),
+        str(settings.get("reasoning", "default")),
     )
 
 
@@ -187,7 +189,7 @@ def run_directory(
     directory = RUNS / run_id
     directory.mkdir(parents=False)
     (directory / "harbor").mkdir()
-    benchmark_name, benchmark_version, benchmark_model = benchmark_settings(root_config or load_yaml())
+    benchmark_name, benchmark_version, benchmark_model, reasoning = benchmark_settings(root_config or load_yaml())
     run = {
         "schema_version": 1,
         "run_id": run_id,
@@ -203,7 +205,7 @@ def run_directory(
         "provider_plan_tier": config.get("plan_tier", "unknown"),
         "endpoint": endpoint,
         "api_model": api_model,
-        "reasoning": False,
+        "reasoning_mode": reasoning,
         "streaming": True,
         "concurrency": options.concurrency,
         "trials": options.trials,
@@ -221,7 +223,7 @@ def run_directory(
     }
     run["environment_fingerprint"] = fingerprint(run)
     (directory / "run.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
-    routes = {options.provider: {"upstream": endpoint, "plan": config.get("plan"), "plan_tier": config.get("plan_tier", "unknown")}}
+    routes = {options.provider: {"upstream": endpoint, "plan": config.get("plan"), "plan_tier": config.get("plan_tier", "unknown"), "reasoning": reasoning}}
     (directory / "proxy-routes.json").write_text(json.dumps(routes, indent=2) + "\n", encoding="utf-8")
     (directory / "status.json").write_text(json.dumps({"status": "created", "updated_at_utc": utc()}, indent=2) + "\n", encoding="utf-8")
     return directory
@@ -261,7 +263,7 @@ def harbor_command(options: RunOptions, config: dict[str, Any], endpoint: str, a
         "run_id": directory.name,
         "proxy_url": f"http://host.docker.internal:{options.proxy_port}",
         "api": config.get("api", "openai-completions"),
-        "reasoning": "false",
+        "reasoning": options.reasoning,
         "max_tokens": "49152",
         "context_window": "262144",
     }
@@ -411,9 +413,11 @@ def run_one(options: RunOptions, root_config: dict[str, Any] | None = None) -> P
     executable("docker")
     root_config, config = provider_config(options.provider, root_config)
     values = parse_env(ROOT / str(config["env_file"]))
-    benchmark_name, benchmark_version, benchmark_model = benchmark_settings(root_config)
+    benchmark_name, benchmark_version, benchmark_model, reasoning = benchmark_settings(root_config)
     if (options.benchmark, options.benchmark_version, options.benchmark_model) != (benchmark_name, benchmark_version, benchmark_model):
         raise SystemExit("benchmark configuration does not match providers.yaml")
+    if options.reasoning != reasoning:
+        raise SystemExit("benchmark reasoning mode does not match providers.yaml")
     endpoint, api_model = resolve(options.provider, config, values)
     tokenizer = tokenizer_metadata(config, values)
     if tokenizer["source"] != "huggingface":
@@ -457,21 +461,23 @@ def probe_concurrency(name: str, root_config: dict[str, Any] | None = None, stag
     print(json.dumps({"summary": str(summary_path), "requests": str(jsonl_path)}, indent=2))
 
 
-def compare(providers: list[str], mode: str, model: str, concurrency: int, trials: int, root_config: dict[str, Any] | None = None) -> None:
-    import concurrent.futures
+def compare(providers: list[str], mode: str, model: str, concurrency: int, trials: int, root_config: dict[str, Any] | None = None, execution: str = "sequential", reasoning: str = "default") -> None:
     root_config = root_config or load_yaml()
-    base_port = PROXY_PORT
     directories: list[Path] = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(providers), thread_name_prefix="compare") as pool:
-        futures = {
-            pool.submit(run_one, RunOptions(provider=provider, mode=mode, benchmark_model=model, concurrency=concurrency, trials=trials, proxy_port=base_port + index), root_config): index
-            for index, provider in enumerate(providers)
-        }
-        for future in concurrent.futures.as_completed(futures):
-            directories.append(future.result())
+    if execution == "parallel":
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(providers), thread_name_prefix="compare") as pool:
+            futures = {
+                pool.submit(run_one, RunOptions(provider=provider, mode=mode, benchmark_model=model, reasoning=reasoning, concurrency=concurrency, trials=trials, proxy_port=PROXY_PORT + index), root_config): index
+                for index, provider in enumerate(providers)
+            }
+            for future in concurrent.futures.as_completed(futures):
+                directories.append(future.result())
+    else:
+        for provider in providers:
+            directories.append(run_one(RunOptions(provider=provider, mode=mode, benchmark_model=model, reasoning=reasoning, concurrency=concurrency, trials=trials), root_config))
     directories.sort(key=lambda d: d.name)
-    subprocess.run([sys.executable, str(ROOT / "analytics" / "analyze.py"), *(str(path) for path in directories)], cwd=ROOT, check=True)
-
+    subprocess.run([sys.executable, str(ROOT / "analytics" / "analyze.py"), "--execution", execution, *(str(path) for path in directories)], cwd=ROOT, check=True)
 
 def main() -> None:
     root_config = load_yaml()
@@ -480,18 +486,24 @@ def main() -> None:
         raise SystemExit("no enabled providers in config/providers.yaml")
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers(dest="command", required=True)
+    default_reasoning = str((root_config.get("benchmark") or {}).get("reasoning", "default"))
     for mode in ("smoke", "full"):
         command = commands.add_parser(mode)
         command.add_argument("--provider", required=True, choices=providers)
         command.add_argument("--model", default=DEFAULT_MODEL, dest="benchmark_model")
+        command.add_argument("--reasoning", choices=("default", "enabled", "disabled"), default=default_reasoning)
         command.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY)
         command.add_argument("--trials", type=int, default=DEFAULT_TRIALS)
     compare_parser = commands.add_parser("compare")
     compare_parser.add_argument("--providers", default=",".join(providers))
     compare_parser.add_argument("--mode", choices=("smoke", "full"), default="full")
     compare_parser.add_argument("--model", default=DEFAULT_MODEL, dest="benchmark_model")
+    compare_parser.add_argument("--reasoning", choices=("default", "enabled", "disabled"), default=default_reasoning)
     compare_parser.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY)
     compare_parser.add_argument("--trials", type=int, default=DEFAULT_TRIALS)
+    execution_group = compare_parser.add_mutually_exclusive_group()
+    execution_group.add_argument("--execution", choices=("sequential", "parallel"), default="sequential", help="how provider benchmark runs are scheduled (default: sequential)")
+    execution_group.add_argument("--parallel-providers", action="store_true", dest="parallel_alias", help="alias for --execution parallel (informal testing only)")
     validate = commands.add_parser("validate")
     validate.add_argument("--provider", required=True, choices=providers)
     probe_parser = commands.add_parser("probe-concurrency")
@@ -500,7 +512,7 @@ def main() -> None:
     commands.add_parser("prepare-tokenizer")
     args = parser.parse_args()
     if args.command in {"smoke", "full"}:
-        run_one(RunOptions(provider=args.provider, mode=args.command, benchmark_model=args.benchmark_model, concurrency=args.concurrency, trials=args.trials), root_config)
+        run_one(RunOptions(provider=args.provider, mode=args.command, benchmark_model=args.benchmark_model, reasoning=args.reasoning, concurrency=args.concurrency, trials=args.trials), root_config)
     elif args.command == "compare":
         requested = [value.strip() for value in args.providers.split(",") if value.strip()]
         if not requested:
@@ -508,7 +520,8 @@ def main() -> None:
         unknown = [name for name in requested if name not in providers]
         if unknown:
             raise SystemExit(f"unknown provider(s): {', '.join(unknown)}")
-        compare(requested, args.mode, args.benchmark_model, args.concurrency, args.trials, root_config)
+        execution = "parallel" if getattr(args, "parallel_alias", False) else args.execution
+        compare(requested, args.mode, args.benchmark_model, args.concurrency, args.trials, root_config, execution=execution, reasoning=args.reasoning)
     elif args.command == "probe-concurrency":
         probe_concurrency(args.provider, root_config, stages=tuple(int(value.strip()) for value in args.stages.split(",") if value.strip()))
     elif args.command == "prepare-tokenizer":
