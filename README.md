@@ -2,6 +2,21 @@
 
 Reproducible Terminal-Bench 2.1 comparison of Kourier and ElectronHub Dev/Coding using OMP and the same canonical DeepSeek V4 Flash 0731 model.
 
+## Quickstart
+
+The fastest first run — one provider, smoke mode:
+
+```bash
+python3 -m pip install -e .
+cp config/kourier.env.example config/kourier.env
+chmod 600 config/kourier.env
+# edit config/kourier.env: set KOURIER_API_KEY
+benchmarkctl prepare-tokenizer
+benchmarkctl smoke --provider kourier
+```
+
+That validates credentials, runs 3 quick Terminal-Bench tasks, and produces a run under `runs/`. You only need one provider's key — skip the other provider entirely. The full 89-task run is `benchmarkctl full --provider kourier`; an apples-to-apples comparison is `benchmarkctl compare --providers kourier,electronhub` (runs sequentially by default).
+
 ## Fixed configuration
 
 - Benchmark: Terminal-Bench 2.1, 89 tasks
