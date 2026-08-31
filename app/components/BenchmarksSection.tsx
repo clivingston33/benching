@@ -10,7 +10,7 @@ import { YAxis } from "@/dither-kit/YAxis";
 import { Tooltip } from "@/dither-kit/Tooltip";
 import { Legend } from "@/dither-kit/Legend";
 
-import { benchmarkRows, providerConfig, providers, MODEL_CONFOUND } from "@/lib/benchmark-data";
+import { benchmarkRows, providerConfig, providers, APPLES_TO_APPLES } from "@/lib/benchmark-data";
 
 const terminalConfig = providerConfig;
 
@@ -44,7 +44,7 @@ export default function BenchmarksSection() {
           <Tooltip labelKey="bench" valueFormatter={(v) => `${v}`} />
         </BarChart>
       </div>
-      <div className="bench-foot">Terminal Bench 2.1 — Higher is better · {MODEL_CONFOUND}</div>
+      <div className="bench-foot">Terminal Bench 2.1 — Higher is better · {APPLES_TO_APPLES}</div>
     </div>
   );
 }

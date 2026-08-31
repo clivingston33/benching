@@ -15,7 +15,7 @@ import {
   contextTtftPoints,
   contextFailurePoints,
   providerConfig,
-  KOURIER_NO_TELEMETRY,
+  APPLES_TO_APPLES,
 } from "@/lib/benchmark-data";
 
 type Tab = "speed" | "ttft" | "failure";
@@ -25,7 +25,6 @@ const ttftPoints = contextTtftPoints;
 const failurePoints = contextFailurePoints;
 
 const contextConfig = providerConfig;
-const config = { electronhub: providerConfig.electronhub };
 
 export default function ContextScalingSection() {
   const [tab, setTab] = useState<Tab>("speed");
@@ -59,33 +58,36 @@ export default function ContextScalingSection() {
 
       <div className="chart-wrap" style={{ height: 360 }}>
         {tab === "speed" && (
-          <LineChart data={outputPoints} config={config} className="h-full w-full" margins={{ top: 32, right: 12, bottom: 22, left: 44 }}>
+          <LineChart data={outputPoints} config={contextConfig} className="h-full w-full" margins={{ top: 32, right: 12, bottom: 22, left: 44 }}>
             <Grid horizontal />
             <XAxis dataKey="label" />
             <YAxis tickCount={5} />
             <Crosshair />
+            <Line dataKey="kourier"><ActiveDot /></Line>
             <Line dataKey="electronhub"><ActiveDot /></Line>
             <Legend align="right" />
             <Tooltip labelKey="label" valueFormatter={(v) => `${v} tok/s`} />
           </LineChart>
         )}
         {tab === "ttft" && (
-          <LineChart data={ttftPoints} config={config} className="h-full w-full" margins={{ top: 32, right: 12, bottom: 22, left: 52 }}>
+          <LineChart data={ttftPoints} config={contextConfig} className="h-full w-full" margins={{ top: 32, right: 12, bottom: 22, left: 52 }}>
             <Grid horizontal />
             <XAxis dataKey="label" />
             <YAxis tickCount={5} />
             <Crosshair />
+            <Line dataKey="kourier"><ActiveDot /></Line>
             <Line dataKey="electronhub"><ActiveDot /></Line>
             <Legend align="right" />
             <Tooltip labelKey="label" valueFormatter={(v) => `${v} ms`} />
           </LineChart>
         )}
         {tab === "failure" && (
-          <LineChart data={failurePoints} config={config} className="h-full w-full" margins={{ top: 32, right: 12, bottom: 22, left: 44 }}>
+          <LineChart data={failurePoints} config={contextConfig} className="h-full w-full" margins={{ top: 32, right: 12, bottom: 22, left: 44 }}>
             <Grid horizontal />
             <XAxis dataKey="label" />
             <YAxis tickCount={5} />
             <Crosshair />
+            <Line dataKey="kourier"><ActiveDot /></Line>
             <Line dataKey="electronhub"><ActiveDot /></Line>
             <Legend align="right" />
             <Tooltip labelKey="label" valueFormatter={(v) => `${v}%`} />
@@ -94,7 +96,7 @@ export default function ContextScalingSection() {
       </div>
 
       <div className="bench-foot">
-        {tab === "failure" || tab === "ttft" ? "Lower is better" : "Higher is better"} · {KOURIER_NO_TELEMETRY}
+        {tab === "failure" || tab === "ttft" ? "Lower is better" : "Higher is better"} · {APPLES_TO_APPLES}
       </div>
     </div>
   );

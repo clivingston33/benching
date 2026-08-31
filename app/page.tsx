@@ -7,7 +7,7 @@ import ContextScalingSection from "./components/ContextScalingSection";
 import RunHistorySection from "./components/RunHistorySection";
 import BenchmarksSection from "./components/BenchmarksSection";
 import TaskResultsSection from "./components/TaskResultsSection";
-import { comparisonRows, MODEL_CONFOUND, providers, MODELS } from "@/lib/benchmark-data";
+import { comparisonRows, APPLES_TO_APPLES, providers, MODELS } from "@/lib/benchmark-data";
 
 function Section({ id, title, children }: { id: string; title: string; children?: React.ReactNode }) {
   return (
@@ -74,9 +74,9 @@ export default function Home() {
               </table>
             </div>
             <p className="data-note">
-              {MODEL_CONFOUND} Request counts: Kourier {providers.kourier.requests.toLocaleString()}, ElectronHub{" "}
-              {providers.electronhub.requests.toLocaleString()} (full runs). "n/a" = metric not recorded by the proxy for
-              that provider.
+              {APPLES_TO_APPLES} Request counts: Kourier {providers.kourier.requests.toLocaleString()}, ElectronHub{" "}
+              {providers.electronhub.requests.toLocaleString()} (smoke, 3 tasks each). Kourier's higher count reflects
+              retried calls during its adaptive-rejection-sampler timeout.
             </p>
           </section>
           <section id="benchmarks" className="content-section">

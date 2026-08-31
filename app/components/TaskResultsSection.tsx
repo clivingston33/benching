@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { ALL_TASKS, fmtDuration, MODEL_CONFOUND } from "@/lib/benchmark-data";
+import { ALL_TASKS, fmtDuration, APPLES_TO_APPLES } from "@/lib/benchmark-data";
 import type { TaskRow } from "@/lib/benchmark-data";
 
 type Filter = "different" | "all" | "bothPassed" | "bothFailed";
@@ -155,7 +155,7 @@ export default function TaskResultsSection() {
         </div>
       </div>
 
-      <div className="bench-foot" style={{ marginTop: 12 }}>{MODEL_CONFOUND}</div>
+      <div className="bench-foot" style={{ marginTop: 12 }}>{APPLES_TO_APPLES}</div>
     </div>
   );
 }

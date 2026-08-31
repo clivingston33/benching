@@ -11,7 +11,7 @@ import { XAxis } from "@/dither-kit/XAxis";
 import { YAxis } from "@/dither-kit/YAxis";
 import { Tooltip } from "@/dither-kit/Tooltip";
 import { Legend } from "@/dither-kit/Legend";
-import { successRows, timeoutRows, breakdownRows, breakdownConfig, providerConfig, MODEL_CONFOUND } from "@/lib/benchmark-data";
+import { successRows, timeoutRows, breakdownRows, breakdownConfig, providerConfig, APPLES_TO_APPLES } from "@/lib/benchmark-data";
 
 type Tab = "success" | "timeout" | "breakdown";
 
@@ -89,7 +89,7 @@ export default function ReliabilitySection() {
       </div>
 
       <div className="bench-foot">
-        {tab === "success" ? "Higher is better" : "Lower is better"} · {MODEL_CONFOUND}
+        {tab === "success" ? "Higher is better" : "Lower is better"} · {APPLES_TO_APPLES}
       </div>
     </div>
   );

@@ -10,7 +10,7 @@ import { XAxis } from "@/dither-kit/XAxis";
 import { YAxis } from "@/dither-kit/YAxis";
 import { Tooltip } from "@/dither-kit/Tooltip";
 import { Legend } from "@/dither-kit/Legend";
-import { runs, providersList, modelsList, benchmarksList, providerConfig, MODEL_CONFOUND } from "@/lib/benchmark-data";
+import { runs, providersList, modelsList, benchmarksList, providerConfig, APPLES_TO_APPLES } from "@/lib/benchmark-data";
 import type { Run } from "@/lib/benchmark-data";
 
 const providers = providersList;

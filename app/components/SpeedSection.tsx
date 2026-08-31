@@ -19,8 +19,7 @@ import {
   speedEffectiveRows,
   speedContextPoints,
   providerConfig,
-  has,
-  KOURIER_NO_TELEMETRY,
+  APPLES_TO_APPLES,
   providers,
 } from "@/lib/benchmark-data";
 type Tab = "output" | "effective" | "context";
@@ -33,13 +32,6 @@ const speedConfig = providerConfig;
 
 export default function SpeedSection() {
   const [tab, setTab] = useState<Tab>("output");
-  const kourierHasData = tab === "context" ? false : has("kourier", outputRows[0].kourier);
-  const config =
-    tab === "context"
-      ? { electronhub: providerConfig.electronhub }
-      : kourierHasData
-        ? providerConfig
-        : { electronhub: providerConfig.electronhub };
 
   return (
     <div className="benchmarks-card">
@@ -64,7 +56,7 @@ export default function SpeedSection() {
         </h3>
         <p className="bench-desc">
           {tab === "context"
-            ? "Decode TPS vs context length (ElectronHub only — input tokens) — Higher is better."
+            ? "Decode TPS vs context length — Higher is better."
             : tab === "effective"
               ? "Effective tok/s incl. overhead — Higher is better."
               : "Median decode tokens per second — Higher is better."}
@@ -73,11 +65,11 @@ export default function SpeedSection() {
 
       <div className="chart-wrap" style={{ height: tab === "context" ? 360 : 340 }}>
         {tab === "output" && (
-          <BarChart data={outputRows} config={config} className="h-full w-full" margins={{ top: 52, right: 12, bottom: 36, left: 40 }}>
+          <BarChart data={outputRows} config={speedConfig} className="h-full w-full" margins={{ top: 52, right: 12, bottom: 36, left: 40 }}>
             <Grid horizontal />
             <XAxis dataKey="bench" />
             <YAxis tickCount={5} />
-            {kourierHasData && <Bar dataKey="kourier" />}
+            <Bar dataKey="kourier" />
             <Bar dataKey="electronhub" />
             <BarLabels formatter={(v) => `${Math.round(v)} tok/s`} offset={12} />
             <BarSeriesLogos logos={{ kourier: "/kourier.svg", electronhub: "/electron.svg" }} />
@@ -86,11 +78,11 @@ export default function SpeedSection() {
           </BarChart>
         )}
         {tab === "effective" && (
-          <BarChart data={effectiveRows} config={config} className="h-full w-full" margins={{ top: 52, right: 12, bottom: 36, left: 40 }}>
+          <BarChart data={effectiveRows} config={speedConfig} className="h-full w-full" margins={{ top: 52, right: 12, bottom: 36, left: 40 }}>
             <Grid horizontal />
             <XAxis dataKey="bench" />
             <YAxis tickCount={5} />
-            {kourierHasData && <Bar dataKey="kourier" />}
+            <Bar dataKey="kourier" />
             <Bar dataKey="electronhub" />
             <BarLabels formatter={(v) => `${Math.round(v)} tok/s`} offset={12} />
             <BarSeriesLogos logos={{ kourier: "/kourier.svg", electronhub: "/electron.svg" }} />
@@ -99,11 +91,12 @@ export default function SpeedSection() {
           </BarChart>
         )}
         {tab === "context" && (
-          <LineChart data={contextPoints} config={config} className="h-full w-full" margins={{ top: 32, right: 12, bottom: 22, left: 40 }}>
+          <LineChart data={contextPoints} config={speedConfig} className="h-full w-full" margins={{ top: 32, right: 12, bottom: 22, left: 40 }}>
             <Grid horizontal />
             <XAxis dataKey="ctx" />
             <YAxis tickCount={5} />
             <Crosshair />
+            <Line dataKey="kourier"><ActiveDot /></Line>
             <Line dataKey="electronhub"><ActiveDot /></Line>
             <Legend align="right" />
             <Tooltip labelKey="ctx" valueFormatter={(v) => `${v} tok/s`} />
@@ -113,8 +106,8 @@ export default function SpeedSection() {
 
       <div className="bench-foot">
         {tab === "context"
-          ? `Speed — Higher is better · ElectronHub n=${providers.electronhub.requests} requests`
-          : `Speed (tok/s) — Higher is better · ${KOURIER_NO_TELEMETRY}`}
+          ? `Speed — Higher is better · kourier n=${providers.kourier.requests}, electronhub n=${providers.electronhub.requests} requests`
+          : `Speed (tok/s) — Higher is better · ${APPLES_TO_APPLES}`}
       </div>
     </div>
   );
