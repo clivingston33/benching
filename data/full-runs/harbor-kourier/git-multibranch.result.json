@@ -1,0 +1,138 @@
+{
+    "id": "a4ccd53d-d9d0-450c-a657-ff3d4a06f5db",
+    "task_name": "terminal-bench/git-multibranch",
+    "trial_name": "git-multibranch__vFjYumM",
+    "trial_uri": "file:///tmp/benching-target/runs/tb21-v1-kourier-full-20260828-045927-760058c0/harbor/tb21-v1-kourier-full-20260828-045927-760058c0/git-multibranch__vFjYumM",
+    "task_id": {
+        "path": "/home/caleb/terminal-bench-2-1/tasks/git-multibranch"
+    },
+    "source": "tasks",
+    "task_checksum": "d3f600bc65cccb2ada659463e5a9730d39eecb0800be0725caf9aa7ad32354e0",
+    "config": {
+        "task": {
+            "path": "/home/caleb/terminal-bench-2-1/tasks/git-multibranch",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "tasks"
+        },
+        "trial_name": "git-multibranch__vFjYumM",
+        "trials_dir": "/tmp/benching-target/runs/tb21-v1-kourier-full-20260828-045927-760058c0/harbor/tb21-v1-kourier-full-20260828-045927-760058c0",
+        "install_only": false,
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": null,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": "agents.instrumented_omp_agent:InstrumentedOmpAgent",
+            "import_path": null,
+            "model_name": "kourier/DSV4-Flash-0731",
+            "n_concurrent": 3,
+            "concurrency_group": null,
+            "skills": [],
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "resume_trajectory": false,
+            "load_trajectory": null,
+            "extra_allowed_hosts": [],
+            "include_logs": [
+                "**/*"
+            ],
+            "kwargs": {
+                "provider": "kourier",
+                "provider_plan": "",
+                "benchmark_model": "deepseek-v4-flash-0731",
+                "model": "DSV4-Flash-0731",
+                "upstream": "https://api.kourier.sh/v1",
+                "api_key_env": "KOURIER_API_KEY",
+                "run_id": "tb21-v1-kourier-full-20260828-045927-760058c0",
+                "proxy_url": "http://host.docker.internal:8765",
+                "api": "openai-completions",
+                "reasoning": false,
+                "max_tokens": 49152,
+                "context_window": 262144
+            },
+            "mcp_servers": []
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "cpu_enforcement_policy": "auto",
+            "memory_enforcement_policy": "auto",
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "override_tpu": null,
+            "mounts": [
+                {
+                    "type": "bind",
+                    "source": "/tmp/benching-target/cache",
+                    "target": "/opt/provider-benchmark",
+                    "read_only": true
+                }
+            ],
+            "extra_docker_compose": [
+                "/tmp/benching-target/runs/tb21-v1-kourier-full-20260828-045927-760058c0/docker-host-gateway.yaml"
+            ],
+            "kwargs": {},
+            "extra_allowed_hosts": []
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "disable": false
+        },
+        "artifacts": [],
+        "extra_instruction_paths": [],
+        "job_id": "6805e438-0165-42df-b6ee-6328ab0de261"
+    },
+    "agent_info": {
+        "name": "instrumented-omp",
+        "version": "omp/17.1.3",
+        "model_info": {
+            "name": "DSV4-Flash-0731",
+            "provider": "kourier"
+        }
+    },
+    "agent_result": {
+        "n_input_tokens": 995852,
+        "n_cache_tokens": 973568,
+        "n_output_tokens": 12048,
+        "cost_usd": null,
+        "rollout_details": null,
+        "metadata": null
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 1.0
+        }
+    },
+    "exception_info": null,
+    "started_at": "2026-08-28T05:02:39.380562Z",
+    "finished_at": "2026-08-28T05:07:07.087688Z",
+    "environment_setup": {
+        "started_at": "2026-08-28T05:02:39.381619Z",
+        "finished_at": "2026-08-28T05:02:41.028940Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-08-28T05:02:41.028968Z",
+        "finished_at": "2026-08-28T05:03:05.963598Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-08-28T05:03:05.963873Z",
+        "finished_at": "2026-08-28T05:06:29.778303Z"
+    },
+    "verifier": {
+        "started_at": "2026-08-28T05:06:30.184758Z",
+        "finished_at": "2026-08-28T05:06:54.637963Z"
+    },
+    "step_results": null
+}

@@ -43,7 +43,7 @@ export const providerConfig: Record<ProviderKey, { label: string; color: string 
 };
 
 export const APPLES_TO_APPLES =
-  "Official V1 comparison: same model deepseek-v4-flash-0731 on both providers (Terminal-Bench 2.1, sequential, 3 smoke tasks, 2026-08-31).";
+  "Official V1 FULL comparison: same model deepseek-v4-flash-0731 on both providers — 89 Terminal-Bench 2.1 tasks each, completed 2026-08-28 (kourier 6h08m, electronhub 6h44m).";
 
 // ---------- Comparison table ----------
 export type ComparisonRow = { metric: string; kourier: string; electron: string; note: string };
@@ -54,11 +54,11 @@ const fmtPct = (v: number | null) => (v == null ? "n/a" : `${v.toFixed(1)}%`);
 const fmtTps = (v: number | null) => (v == null ? "n/a" : `${Math.round(v)} tok/s`);
 
 export const comparisonRows: ComparisonRow[] = [
-  { metric: "Median Output Speed", kourier: fmtTps(providers.kourier.median_decode_tps), electron: fmtTps(providers.electronhub.median_decode_tps), note: "ElectronHub ~37% faster decode" },
-  { metric: "Median Time to First Token", kourier: fmtMs(providers.kourier.median_ttft_ms), electron: fmtMs(providers.electronhub.median_ttft_ms), note: "Kourier TTFT ~2.6× lower" },
+  { metric: "Median Output Speed", kourier: fmtTps(providers.kourier.median_decode_tps), electron: fmtTps(providers.electronhub.median_decode_tps), note: "ElectronHub ~27% faster decode" },
+  { metric: "Median Time to First Token", kourier: fmtMs(providers.kourier.median_ttft_ms), electron: fmtMs(providers.electronhub.median_ttft_ms), note: "Kourier TTFT ~3.7× lower" },
   { metric: "P95 Time to First Token", kourier: fmtMs(providers.kourier.p95_ttft_ms), electron: fmtMs(providers.electronhub.p95_ttft_ms), note: "Kourier tail latency much lower" },
-  { metric: "Median End-to-End Time", kourier: fmtS(providers.kourier.median_e2e_ms), electron: fmtS(providers.electronhub.median_e2e_ms), note: "Kourier ~4× faster end-to-end" },
-  { metric: "Request Success Rate", kourier: fmtPct(providers.kourier.success_rate), electron: fmtPct(providers.electronhub.success_rate), note: "Both >95%; Kourier 1 cancellation" },
+  { metric: "Median End-to-End Time", kourier: fmtS(providers.kourier.median_e2e_ms), electron: fmtS(providers.electronhub.median_e2e_ms), note: "Kourier ~1.8× faster end-to-end" },
+  { metric: "Request Success Rate", kourier: fmtPct(providers.kourier.success_rate), electron: fmtPct(providers.electronhub.success_rate), note: "Both >98%; 7 vs 36 failures" },
   { metric: "Stream Completion Rate", kourier: fmtPct(providers.kourier.stream_completion_rate), electron: fmtPct(providers.electronhub.stream_completion_rate), note: "Kourier slightly higher" },
   { metric: "Timeout Rate", kourier: fmtPct(providers.kourier.timeout_rate), electron: fmtPct(providers.electronhub.timeout_rate), note: "No HTTP timeouts either side" },
   { metric: "Context Window", kourier: "262k", electron: "262k", note: "Identical 262k both providers" },
@@ -184,7 +184,7 @@ export const runs: Run[] = summary.run_history.map((r) => ({
   badges: [
     r.mode === "smoke" ? "Smoke" : "Full",
     r.concurrency && r.concurrency !== "sequential" ? `Concurrency ${r.concurrency}` : "Sequential",
-    ...(r.attempts ? [`Attempts ${r.attempts}`] : []),
+    ...(r.reasoning && r.reasoning !== "default" ? [`Reasoning ${r.reasoning}`] : ["Reasoning default"]),
   ],
 }));
 

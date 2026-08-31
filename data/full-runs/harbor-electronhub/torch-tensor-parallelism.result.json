@@ -1,0 +1,143 @@
+{
+    "id": "6d31b586-268a-45db-99a6-0a678dec9569",
+    "task_name": "terminal-bench/torch-tensor-parallelism",
+    "trial_name": "torch-tensor-parallelism__BEyoSYc",
+    "trial_uri": "file:///tmp/benching-target/runs/tb21-v1-electronhub-full-20260828-110831-aaed8ef8/harbor/tb21-v1-electronhub-full-20260828-110831-aaed8ef8/torch-tensor-parallelism__BEyoSYc",
+    "task_id": {
+        "path": "/home/caleb/terminal-bench-2-1/tasks/torch-tensor-parallelism"
+    },
+    "source": "tasks",
+    "task_checksum": "3efbd1bc7719d9cbc147fe8942eb72f5c25d591d683a1bc521febf1316e57f88",
+    "config": {
+        "task": {
+            "path": "/home/caleb/terminal-bench-2-1/tasks/torch-tensor-parallelism",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "tasks"
+        },
+        "trial_name": "torch-tensor-parallelism__BEyoSYc",
+        "trials_dir": "/tmp/benching-target/runs/tb21-v1-electronhub-full-20260828-110831-aaed8ef8/harbor/tb21-v1-electronhub-full-20260828-110831-aaed8ef8",
+        "install_only": false,
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": null,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": "agents.instrumented_omp_agent:InstrumentedOmpAgent",
+            "import_path": null,
+            "model_name": "electronhub/deepseek-v4-flash-0731:dev",
+            "n_concurrent": 3,
+            "concurrency_group": null,
+            "skills": [],
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "resume_trajectory": false,
+            "load_trajectory": null,
+            "extra_allowed_hosts": [],
+            "include_logs": [
+                "**/*"
+            ],
+            "kwargs": {
+                "provider": "electronhub",
+                "provider_plan": "dev_coding",
+                "benchmark_model": "deepseek-v4-flash-0731",
+                "model": "deepseek-v4-flash-0731:dev",
+                "upstream": "https://api.electronhub.ai/v1",
+                "api_key_env": "ELECTRONHUB_API_KEY",
+                "run_id": "tb21-v1-electronhub-full-20260828-110831-aaed8ef8",
+                "proxy_url": "http://host.docker.internal:8765",
+                "api": "openai-completions",
+                "reasoning": false,
+                "max_tokens": 49152,
+                "context_window": 262144
+            },
+            "mcp_servers": []
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "cpu_enforcement_policy": "auto",
+            "memory_enforcement_policy": "auto",
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "override_tpu": null,
+            "mounts": [
+                {
+                    "type": "bind",
+                    "source": "/tmp/benching-target/cache",
+                    "target": "/opt/provider-benchmark",
+                    "read_only": true
+                }
+            ],
+            "extra_docker_compose": [
+                "/tmp/benching-target/runs/tb21-v1-electronhub-full-20260828-110831-aaed8ef8/docker-host-gateway.yaml"
+            ],
+            "kwargs": {},
+            "extra_allowed_hosts": []
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "disable": false
+        },
+        "artifacts": [],
+        "extra_instruction_paths": [],
+        "job_id": "5ad142e1-6b21-48c9-84bf-286826719c8a"
+    },
+    "agent_info": {
+        "name": "instrumented-omp",
+        "version": "omp/17.1.3",
+        "model_info": {
+            "name": "deepseek-v4-flash-0731:dev",
+            "provider": "electronhub"
+        }
+    },
+    "agent_result": {
+        "n_input_tokens": 1053361,
+        "n_cache_tokens": 1006080,
+        "n_output_tokens": 51507,
+        "cost_usd": null,
+        "rollout_details": null,
+        "metadata": null
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.0
+        }
+    },
+    "exception_info": {
+        "exception_type": "AgentTimeoutError",
+        "exception_message": "Agent execution timed out after 900.0 seconds",
+        "exception_traceback": "Traceback (most recent call last):\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/caleb/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/agents/installed/base.py\", line 168, in wrapper\n    return await fn(self, instruction, *args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/benching-target/agents/instrumented_omp_agent.py\", line 85, in run\n    await self.exec_as_agent(environment, command=command)\n  File \"/home/caleb/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/agents/installed/base.py\", line 592, in exec_as_agent\n    return await self._exec(\n           ^^^^^^^^^^^^^^^^^\n  File \"/home/caleb/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/agents/installed/base.py\", line 543, in _exec\n    result = await environment.exec(\n             ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/caleb/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/environments/docker/docker.py\", line 1096, in exec\n    return await self._compose_exec(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/caleb/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/environments/docker/docker.py\", line 1173, in _compose_exec\n    return await self._run_docker_compose_command(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/caleb/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/environments/docker/docker.py\", line 649, in _run_docker_compose_command\n    result = await self._collect_buffered_output(\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/caleb/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/environments/docker/docker.py\", line 679, in _collect_buffered_output\n    stdout_bytes, stderr_bytes = await process.communicate(input=stdin_data)\n                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/subprocess.py\", line 201, in communicate\n    stdin, stdout, stderr = await tasks.gather(stdin, stdout, stderr)\n                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/subprocess.py\", line 181, in _read_stream\n    output = await stream.read()\n             ^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/streams.py\", line 706, in read\n    block = await self.read(self._limit)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/asyncio/streams.py\", line 713, in read\n    await self._wait_for_data('read')\n  File \"/usr/lib/python3.12/asyncio/streams.py\", line 545, in _wait_for_data\n    await self._waiter\nasyncio.exceptions.CancelledError\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/caleb/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/trial/trial.py\", line 450, in _run_agent_phase\n    await asyncio.wait_for(\n  File \"/usr/lib/python3.12/asyncio/tasks.py\", line 519, in wait_for\n    async with timeouts.timeout(timeout):\n  File \"/usr/lib/python3.12/asyncio/timeouts.py\", line 115, in __aexit__\n    raise TimeoutError from exc_val\nTimeoutError\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/caleb/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/trial/single_step.py\", line 77, in _run_agent\n    await self._run_agent_phase(\n  File \"/home/caleb/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/trial/trial.py\", line 459, in _run_agent_phase\n    raise AgentTimeoutError(\nharbor.trial.errors.AgentTimeoutError: Agent execution timed out after 900.0 seconds\n",
+        "occurred_at": "2026-08-28T15:06:13.047529"
+    },
+    "started_at": "2026-08-28T14:50:47.367620Z",
+    "finished_at": "2026-08-28T15:08:20.255452Z",
+    "environment_setup": {
+        "started_at": "2026-08-28T14:50:47.368929Z",
+        "finished_at": "2026-08-28T14:50:49.609047Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-08-28T14:50:49.609078Z",
+        "finished_at": "2026-08-28T14:51:12.985962Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-08-28T14:51:12.986181Z",
+        "finished_at": "2026-08-28T15:06:13.046081Z"
+    },
+    "verifier": {
+        "started_at": "2026-08-28T15:06:13.608886Z",
+        "finished_at": "2026-08-28T15:08:06.552688Z"
+    },
+    "step_results": null
+}

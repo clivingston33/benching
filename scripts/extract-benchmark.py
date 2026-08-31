@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Extract real benchmark metrics from the V1 apples-to-apples comparison
+"""Extract real benchmark metrics from the V1 apples-to-apples FULL comparison
 into data/benchmark-summary.json consumed by the dashboard components.
 
-Source: provider-benchmark V1 on docker-24-04 (2026-08-31 runs).
-Official comparison: comparison-20260831-203259.json
+Source: provider-benchmark V1 on docker-24-04 (completed 2026-08-28).
+Official full comparison: comparison-20260828-175348.json
   benchmark_model: deepseek-v4-flash-0731  (same model both providers)
-  kourier     tb21-v1-kourier-smoke-20260831-200149-09964eee   (96 req)
-  electronhub tb21-v1-electronhub-smoke-20260831-201746-45a7c8b2 (26 req)
-  Terminal-Bench 2.1, sequential, 3 smoke tasks, official_comparison: true
+  kourier     tb21-v1-kourier-full-20260828-045927-760058c0   (2964 req)
+  electronhub tb21-v1-electronhub-full-20260828-110831-aaed8ef8 (2845 req)
+  Terminal-Bench 2.1, 89 tasks each, apples-to-apples.
 """
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
-V1 = DATA / "v1-runs"
-COMPARISON = DATA / "comparison-20260831-203259.json"
+FULL = DATA / "full-runs"
+COMPARISON = DATA / "comparison-20260828-175348.json"
 OUT = DATA / "benchmark-summary.json"
 
 MODELS = {"kourier": "deepseek-v4-flash-0731", "electronhub": "deepseek-v4-flash-0731"}
@@ -27,8 +27,8 @@ MODEL_LABEL = "DeepSeek V4 flash 0731"
 CONTEXT_WINDOW = 262144
 
 RUNS = {
-    "kourier": "tb21-v1-kourier-smoke-20260831-200149-09964eee",
-    "electronhub": "tb21-v1-electronhub-smoke-20260831-201746-45a7c8b2",
+    "kourier": "tb21-v1-kourier-full-20260828-045927-760058c0",
+    "electronhub": "tb21-v1-electronhub-full-20260828-110831-aaed8ef8",
 }
 
 
@@ -46,7 +46,7 @@ def median(vals):
 
 def load_metrics(prov: str) -> list[dict]:
     rows = []
-    with open(V1 / f"{RUNS[prov]}.metrics.jsonl") as f:
+    with open(FULL / f"{RUNS[prov]}.metrics.jsonl") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -56,7 +56,7 @@ def load_metrics(prov: str) -> list[dict]:
 
 def load_tasks(prov: str) -> dict[str, dict]:
     """Per-task verifier results from harbor result.json (one per task)."""
-    harbor_dir = V1 / f"{prov}-harbor"
+    harbor_dir = FULL / f"harbor-{prov}"
     out = {}
     for f in harbor_dir.glob("*.result.json"):
         try:
@@ -103,13 +103,20 @@ def provider_stats(prov: str) -> dict:
     tok = c["tokens"]
     metrics = load_metrics(prov)
     # per-request medians for cache tokens (not in comparison aggregate)
-    cache = [num(m["tokens"]["cache_read"]["value"]) for m in metrics if m.get("tokens", {}).get("cache_read", {}).get("value") is not None]
+    cache = [
+        num(m["tokens"]["cache_read"]["value"])
+        for m in metrics
+        if m.get("tokens", {}).get("cache_read", {}).get("value") is not None
+    ]
     return {
         "requests": c["requests"],
         "success_rate": round(rel["request_success_rate"] * 100, 1),
         "stream_completion_rate": round(rel["stream_completion_rate"] * 100, 1),
         "timeout_rate": round(rel["timeout_rate"] * 100, 2),
-        "http_errors": rel.get("http_errors", 0) or 0,
+        "http_errors": rel.get("errors", 0) or 0,
+        "provider_failures": rel.get("provider_failures", 0),
+        "downstream_cancellations": rel.get("downstream_cancellations", 0),
+        "incomplete_provider_streams": rel.get("incomplete_provider_streams", 0),
         "median_ttft_ms": tim["ttft_ms"]["median"],
         "p95_ttft_ms": tim["ttft_ms"]["p95"],
         "median_e2e_ms": tim["end_to_end_latency_ms"]["median"],
@@ -123,7 +130,6 @@ def provider_stats(prov: str) -> dict:
         "tasks_total": c["benchmark"]["total_tasks"],
         "task_pass_rate": round(c["benchmark"]["score"] * 100, 1),
         "errors": rel.get("errors", 0),
-        "downstream_cancellations": rel.get("downstream_cancellations", 0),
     }
 
 
@@ -154,7 +160,7 @@ def task_results() -> list[dict]:
 
 
 def run_history() -> list[dict]:
-    """The two official comparison runs (Aug 31)."""
+    """The two official full comparison runs (Aug 28)."""
     out = []
     for prov in ("kourier", "electronhub"):
         c = runs[prov]
@@ -162,7 +168,7 @@ def run_history() -> list[dict]:
         out.append(
             {
                 "id": RUNS[prov],
-                "date": c["created_at_utc"][:10] if "created_at_utc" in c else "2026-08-31",
+                "date": "2026-08-28",
                 "provider": prov,
                 "model": MODELS[prov],
                 "requests": c["requests"],
@@ -173,10 +179,9 @@ def run_history() -> list[dict]:
                 "tasks_passed": s["tasks_passed"],
                 "tasks_total": s["tasks_total"],
                 "score": s["task_pass_rate"],
-                "concurrency": "sequential",
-                "attempts": c["benchmark"].get("retries", 0),
-                "mode": "smoke",
-                "reasoning": comparison.get("provider_execution_mode", "sequential"),
+                "mode": "full",
+                "concurrency": "3",
+                "reasoning": "default",
             }
         )
     return out
@@ -186,7 +191,7 @@ def context_scaling() -> dict:
     """Per-provider context buckets from the comparison (TTFT / decode TPS)."""
     out = {}
     for prov in ("kourier", "electronhub"):
-        buckets = runs[prov]["context_buckets"]
+        buckets = runs[prov].get("context_buckets") or {}
         speed, ttft, failure = [], [], []
         for label, b in buckets.items():
             if not b.get("requests"):
@@ -205,24 +210,23 @@ for prov in ("kourier", "electronhub"):
 
 summary = {
     "generated_at": "2026-08-31",
-    "source": "provider-benchmark V1 official comparison (2026-08-31) on docker-24-04",
+    "source": "provider-benchmark V1 official FULL comparison (completed 2026-08-28) on docker-24-04",
     "benchmark_model": "deepseek-v4-flash-0731",
     "canonical_runs": RUNS,
     "models": MODELS,
     "model_label": MODEL_LABEL,
-    "benchmark": "Terminal-Bench 2.1 (smoke, 3 tasks)",
-    "official_comparison": comparison.get("official_comparison", True),
-    "provider_execution_mode": comparison.get("provider_execution_mode", "sequential"),
+    "benchmark": "Terminal-Bench 2.1 (full, 89 tasks)",
+    "official_comparison": True,
+    "provider_execution_mode": "sequential",
     "providers": providers,
     "run_history": run_history(),
     "task_results": task_results(),
     "context_scaling": context_scaling(),
     "notes": {
-        "apples_to_apples": "Official V1 comparison: same model deepseek-v4-flash-0731 on both providers (kourier api_model DSV4-Flash-0731, electronhub api_model deepseek-v4-flash-0731:dev).",
-        "smoke": "Smoke run — 3 Terminal-Bench 2.1 tasks per provider (adaptive-rejection-sampler, break-filter-js-from-html, cancel-async-tasks), sequential, 1 attempt, no retries.",
-        "tokens": "Input/output tokens are provider-reported totals divided by request count; cache tokens are per-request medians from proxy telemetry.",
+        "apples_to_apples": "Official V1 FULL comparison: same model deepseek-v4-flash-0731 on both providers, 89 Terminal-Bench 2.1 tasks each, completed 2026-08-28 (kourier 6h08m, electronhub 6h44m).",
+        "tokens": "Input/output tokens are provider-reported totals divided by request count; cache tokens are per-request medians from proxy telemetry. Kourier reported cache read but not cache write tokens.",
         "context_window": f"Both providers configured {CONTEXT_WINDOW} context window (262k).",
-        "kourier_requests": "Kourier ran 96 requests vs electronhub 26 — kourier's adaptive-rejection-sampler task timed out (AgentTimeoutError) with many retried calls.",
+        "request_counts": "Kourier 2964 requests vs electronhub 2845 — model calls per task vary with agent behavior.",
     },
 }
 

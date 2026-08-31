@@ -75,8 +75,8 @@ export default function Home() {
             </div>
             <p className="data-note">
               {APPLES_TO_APPLES} Request counts: Kourier {providers.kourier.requests.toLocaleString()}, ElectronHub{" "}
-              {providers.electronhub.requests.toLocaleString()} (smoke, 3 tasks each). Kourier's higher count reflects
-              retried calls during its adaptive-rejection-sampler timeout.
+              {providers.electronhub.requests.toLocaleString()} (89 tasks each). Task pass rate: {providers.kourier.tasks_passed}/
+              {providers.kourier.tasks_total} vs {providers.electronhub.tasks_passed}/{providers.electronhub.tasks_total}.
             </p>
           </section>
           <section id="benchmarks" className="content-section">
