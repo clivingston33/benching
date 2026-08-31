@@ -16,3 +16,6 @@ dist
 .DS_Store
 Thumbs.db
 *.log
+
+# build artifacts
+*.tsbuildinfo

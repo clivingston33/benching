@@ -7,16 +7,7 @@ import ContextScalingSection from "./components/ContextScalingSection";
 import RunHistorySection from "./components/RunHistorySection";
 import BenchmarksSection from "./components/BenchmarksSection";
 import TaskResultsSection from "./components/TaskResultsSection";
-const rows = [
-  { metric: "Median Output Speed", kourier: "78 tok/s", electron: "71 tok/s", note: "Kourier is ~10% faster" },
-  { metric: "Median Time to First Token", kourier: "420 ms", electron: "610 ms", note: "Kourier begins responding ~31% faster" },
-  { metric: "P95 Time to First Token", kourier: "810 ms", electron: "1.2 s", note: "Kourier has better tail latency" },
-  { metric: "Median End-to-End Time", kourier: "9.2 s", electron: "10.4 s", note: "Kourier completes requests faster" },
-  { metric: "Request Success Rate", kourier: "98.4%", electron: "96.7%", note: "Kourier had fewer failed requests" },
-  { metric: "Stream Completion Rate", kourier: "99.1%", electron: "97.8%", note: "Kourier completed more streams" },
-  { metric: "Timeout Rate", kourier: "1.1%", electron: "2.8%", note: "ElectronHub timed out more often" },
-  { metric: "Context Window", kourier: "128k", electron: "32k", note: "Kourier supports 4× larger context" },
-];
+import { comparisonRows, MODEL_CONFOUND, providers, MODELS } from "@/lib/benchmark-data";
 
 function Section({ id, title, children }: { id: string; title: string; children?: React.ReactNode }) {
   return (
@@ -61,15 +52,17 @@ export default function Home() {
                     <th className="th-metric" />
                     <th className="th-provider th-kourier">
                       <span className="provider-label">Kourier</span>
+                      <span className="provider-model">{MODELS.kourier}</span>
                     </th>
                     <th className="th-provider th-electron">
                       <span className="provider-label">ElectronHub</span>
+                      <span className="provider-model">{MODELS.electronhub}</span>
                     </th>
                     <th className="th-note" />
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => (
+                  {comparisonRows.map((r) => (
                     <tr key={r.metric}>
                       <td className="td-metric">{r.metric}</td>
                       <td className="td-val">{r.kourier}</td>
@@ -80,6 +73,11 @@ export default function Home() {
                 </tbody>
               </table>
             </div>
+            <p className="data-note">
+              {MODEL_CONFOUND} Request counts: Kourier {providers.kourier.requests.toLocaleString()}, ElectronHub{" "}
+              {providers.electronhub.requests.toLocaleString()} (full runs). "n/a" = metric not recorded by the proxy for
+              that provider.
+            </p>
           </section>
           <section id="benchmarks" className="content-section">
             <h2 className="comparison-title">

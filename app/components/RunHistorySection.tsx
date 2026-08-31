@@ -10,92 +10,12 @@ import { XAxis } from "@/dither-kit/XAxis";
 import { YAxis } from "@/dither-kit/YAxis";
 import { Tooltip } from "@/dither-kit/Tooltip";
 import { Legend } from "@/dither-kit/Legend";
+import { runs, providersList, modelsList, benchmarksList, providerConfig, MODEL_CONFOUND } from "@/lib/benchmark-data";
+import type { Run } from "@/lib/benchmark-data";
 
-type Run = {
-  id: string;
-  date: string;
-  dateKey: string;
-  provider: string;
-  model: string;
-  benchmark: string;
-  score: number;
-  speed: number;
-  ttft: number;
-  success: number;
-  badges: string[];
-};
-
-const runs: Run[] = [
-  {
-    id: "1",
-    date: "Aug 30",
-    dateKey: "2026-08-30",
-    provider: "Kourier",
-    model: "dsv4f 0731",
-    benchmark: "Terminal Bench 2.1",
-    score: 61.8,
-    speed: 78,
-    ttft: 0.42,
-    success: 98.4,
-    badges: ["Sequential", "Reasoning Default", "Concurrency 3"],
-  },
-  {
-    id: "2",
-    date: "Aug 30",
-    dateKey: "2026-08-30",
-    provider: "ElectronHub",
-    model: "dsv4f 0731",
-    benchmark: "Terminal Bench 2.1",
-    score: 57.3,
-    speed: 71,
-    ttft: 0.61,
-    success: 96.7,
-    badges: ["Sequential", "Reasoning Default", "Concurrency 3"],
-  },
-  {
-    id: "3",
-    date: "Sep 02",
-    dateKey: "2026-09-02",
-    provider: "Kourier",
-    model: "dsv4f 0731",
-    benchmark: "Terminal Bench 2.1",
-    score: 63.1,
-    speed: 81,
-    ttft: 0.39,
-    success: 99.0,
-    badges: ["Parallel", "Reasoning Enabled", "Concurrency 3"],
-  },
-  {
-    id: "5",
-    date: "Aug 20",
-    dateKey: "2026-08-20",
-    provider: "Kourier",
-    model: "dsv4f 0731",
-    benchmark: "Terminal Bench 2.1",
-    score: 60.2,
-    speed: 75,
-    ttft: 0.45,
-    success: 97.9,
-    badges: ["Sequential", "Reasoning Default", "Concurrency 3"],
-  },
-  {
-    id: "6",
-    date: "Aug 25",
-    dateKey: "2026-08-25",
-    provider: "ElectronHub",
-    model: "dsv4f 0731",
-    benchmark: "Terminal Bench 2.1",
-    score: 56.8,
-    speed: 69,
-    ttft: 0.58,
-    success: 96.9,
-    badges: ["Sequential", "Reasoning Default", "Concurrency 3"],
-  },
-];
-
-const providers = ["All", "Kourier", "ElectronHub"];
-const models = ["All", "dsv4f 0731"];
-const benchmarks = ["All", "Terminal Bench 2.1"];
+const providers = providersList;
+const models = modelsList;
+const benchmarks = benchmarksList;
 
 type Metric = "Benchmark Score" | "Output Speed" | "Time to First Token" | "Success Rate";
 
@@ -106,10 +26,7 @@ const metricKey: Record<Metric, keyof Pick<Run, "score" | "speed" | "ttft" | "su
   "Success Rate": "success",
 };
 
-const trendConfig = {
-  kourier: { label: "DeepSeek V4 flash 0731 (Kourier)", color: "#1F704C" as const },
-  electronhub: { label: "DeepSeek V4 flash 0731 (ElectronHub)", color: "#A242FB" as const },
-};
+const trendConfig = providerConfig;
 
 export default function RunHistorySection() {
   const [provider, setProvider] = useState("All");
@@ -155,8 +72,8 @@ export default function RunHistorySection() {
     return dates.map((dk) => {
       const kRun = sorted.find((r) => r.dateKey === dk && r.provider === "Kourier");
       const eRun = sorted.find((r) => r.dateKey === dk && r.provider === "ElectronHub");
-      if (kRun) lastK = kRun[key] as number;
-      if (eRun) lastE = eRun[key] as number;
+      if (kRun && kRun[key] != null) lastK = kRun[key] as number;
+      if (eRun && eRun[key] != null) lastE = eRun[key] as number;
       return {
         date: dateLabel.get(dk) ?? dk,
         kourier: lastK ?? 0,
@@ -166,10 +83,17 @@ export default function RunHistorySection() {
   }, [filtered, key]);
 
   const activeTrendConfig = useMemo(() => {
-    if (provider === "Kourier") return { kourier: trendConfig.kourier } as unknown as typeof trendConfig;
-    if (provider === "ElectronHub") return { electronhub: trendConfig.electronhub } as unknown as typeof trendConfig;
-    return trendConfig;
-  }, [provider]);
+    const hasK = filtered.some((r) => r.provider === "Kourier" && r[key] != null);
+    const hasE = filtered.some((r) => r.provider === "ElectronHub" && r[key] != null);
+    const cfg: Partial<typeof trendConfig> = {};
+    if (provider === "Kourier" || provider === "All") {
+      if (hasK) cfg.kourier = trendConfig.kourier;
+    }
+    if (provider === "ElectronHub" || provider === "All") {
+      if (hasE) cfg.electronhub = trendConfig.electronhub;
+    }
+    return cfg;
+  }, [provider, filtered, key]);
 
   const yFmt = (v: number) => {
     if (metric === "Time to First Token") return `${v.toFixed(2)}s`;
@@ -286,10 +210,10 @@ export default function RunHistorySection() {
                   </span>
                 </td>
                 <td className="rh-model">{r.model}</td>
-                <td>{r.score.toFixed(1)}%</td>
-                <td>{r.speed} tok/s</td>
-                <td>{r.ttft.toFixed(2)}s</td>
-                <td>{r.success.toFixed(1)}%</td>
+                <td>{r.score == null ? "n/a" : `${r.score.toFixed(1)}%`}</td>
+                <td>{r.speed == null ? "n/a" : `${r.speed} tok/s`}</td>
+                <td>{r.ttft == null ? "n/a" : `${r.ttft.toFixed(2)}s`}</td>
+                <td>{r.success == null ? "n/a" : `${r.success.toFixed(1)}%`}</td>
                 <td>
                   <span className="rh-badges">
                     {r.badges.map((b) => (

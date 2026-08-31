@@ -11,25 +11,11 @@ import { XAxis } from "@/dither-kit/XAxis";
 import { YAxis } from "@/dither-kit/YAxis";
 import { Tooltip } from "@/dither-kit/Tooltip";
 import { Legend } from "@/dither-kit/Legend";
+import { successRows, timeoutRows, breakdownRows, breakdownConfig, providerConfig, MODEL_CONFOUND } from "@/lib/benchmark-data";
 
 type Tab = "success" | "timeout" | "breakdown";
 
-const successRows = [{ bench: "Success Rate", kourier: 98.4, electronhub: 96.7 }];
-const timeoutRows = [{ bench: "Timeout Rate", kourier: 1.1, electronhub: 2.8 }];
-const breakdownRows = [
-  { provider: "Kourier", kTimeout: 1.1, kOther: 0.5, eTimeout: 0, eOther: 0 },
-  { provider: "ElectronHub", kTimeout: 0, kOther: 0, eTimeout: 2.8, eOther: 0.5 },
-];
-const breakdownConfig = {
-  kTimeout: { label: "Kourier Timeout", color: "#1F704C" as const },
-  kOther: { label: "Kourier Other", color: "#86efac" as const },
-  eTimeout: { label: "ElectronHub Timeout", color: "#A242FB" as const },
-  eOther: { label: "ElectronHub Other", color: "#ddd6fe" as const },
-};
-const reliabilityConfig = {
-  kourier: { label: "DeepSeek V4 flash 0731 (Kourier)", color: "#1F704C" as const },
-  electronhub: { label: "DeepSeek V4 flash 0731 (ElectronHub)", color: "#A242FB" as const },
-};
+const reliabilityConfig = providerConfig;
 
 export default function ReliabilitySection() {
   const [tab, setTab] = useState<Tab>("success");
@@ -55,7 +41,7 @@ export default function ReliabilitySection() {
           <span className="bench-arrow">↗</span>
         </h3>
         <p className="bench-desc">
-          DeepSeek v4 flash 0731 · {tab === "success" ? "Higher is better." : "Lower is better."}
+          {tab === "success" ? "HTTP 200 share of all requests — Higher is better." : "Lower is better."}
         </p>
       </div>
       <div className="chart-wrap" style={{ height: tab === "breakdown" ? 360 : 340 }}>
@@ -79,10 +65,10 @@ export default function ReliabilitySection() {
             <YAxis tickCount={5} />
             <Bar dataKey="kourier" />
             <Bar dataKey="electronhub" />
-            <BarLabels formatter={(v) => `${v.toFixed(1)}%`} offset={12} />
+            <BarLabels formatter={(v) => `${v.toFixed(2)}%`} offset={12} />
             <BarSeriesLogos logos={{ kourier: "/kourier.svg", electronhub: "/electron.svg" }} />
             <Legend align="right" />
-            <Tooltip labelKey="bench" valueFormatter={(v) => `${v.toFixed(1)}%`} />
+            <Tooltip labelKey="bench" valueFormatter={(v) => `${v.toFixed(2)}%`} />
           </BarChart>
         )}
         {tab === "breakdown" && (
@@ -102,7 +88,9 @@ export default function ReliabilitySection() {
         )}
       </div>
 
-      <div className="bench-foot">{tab === "success" ? "Higher is better" : "Lower is better"}</div>
+      <div className="bench-foot">
+        {tab === "success" ? "Higher is better" : "Lower is better"} · {MODEL_CONFOUND}
+      </div>
     </div>
   );
 }

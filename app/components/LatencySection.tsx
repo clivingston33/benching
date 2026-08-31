@@ -14,27 +14,28 @@ import { XAxis } from "@/dither-kit/XAxis";
 import { YAxis } from "@/dither-kit/YAxis";
 import { Tooltip } from "@/dither-kit/Tooltip";
 import { Legend } from "@/dither-kit/Legend";
+import {
+  ttftRows,
+  responseRows,
+  latencyContextPoints,
+  providerConfig,
+  has,
+  KOURIER_NO_TELEMETRY,
+} from "@/lib/benchmark-data";
 type Tab = "ttft" | "response" | "context";
 
-const ttftRows = [{ bench: "Time to First Token", kourier: 420, electronhub: 610 }];
-const responseRows = [{ bench: "Response Time", kourier: 9.2, electronhub: 10.4 }];
-const contextPoints = [
-  { ctx: "1k", kourier: 420, electronhub: 610 },
-  { ctx: "2k", kourier: 435, electronhub: 635 },
-  { ctx: "4k", kourier: 455, electronhub: 675 },
-  { ctx: "8k", kourier: 480, electronhub: 720 },
-  { ctx: "16k", kourier: 540, electronhub: 830 },
-  { ctx: "32k", kourier: 620, electronhub: 950 },
-  { ctx: "64k", kourier: 750, electronhub: 1130 },
-  { ctx: "128k", kourier: 900, electronhub: 1350 },
-];
-const latencyConfig = {
-  kourier: { label: "DeepSeek V4 flash 0731 (Kourier)", color: "#1F704C" as const },
-  electronhub: { label: "DeepSeek V4 flash 0731 (ElectronHub)", color: "#A242FB" as const },
-};
+const contextPoints = latencyContextPoints;
+const latencyConfig = providerConfig;
 
 export default function LatencySection() {
   const [tab, setTab] = useState<Tab>("ttft");
+  const kourierHasData = tab === "context" ? false : has("kourier", tab === "ttft" ? ttftRows[0].kourier : responseRows[0].kourier);
+  const config =
+    tab === "context"
+      ? { electronhub: providerConfig.electronhub }
+      : kourierHasData
+        ? providerConfig
+        : { electronhub: providerConfig.electronhub };
 
   return (
     <div className="benchmarks-card">
@@ -46,7 +47,7 @@ export default function LatencySection() {
           Response Time
         </button>
         <button className={`bench-tab ${tab === "context" ? "active" : ""}`} onClick={() => setTab("context")}>
-          Latency by Context Length
+          Latency by context length
         </button>
       </div>
 
@@ -57,15 +58,19 @@ export default function LatencySection() {
           {tab === "context" && "Latency by Context Length"}
           <span className="bench-arrow">↗</span>
         </h3>
-        <p className="bench-desc">DeepSeek v4 flash 0731 · Lower is better.</p>
+        <p className="bench-desc">
+          {tab === "context"
+            ? "Median TTFT vs input context length (ElectronHub only) — Lower is better."
+            : "Median values — Lower is better."}
+        </p>
       </div>
       <div className="chart-wrap" style={{ height: tab === "context" ? 360 : 340 }}>
         {tab === "ttft" && (
-          <BarChart data={ttftRows} config={latencyConfig} className="h-full w-full" margins={{ top: 52, right: 12, bottom: 36, left: 52 }}>
+          <BarChart data={ttftRows} config={config} className="h-full w-full" margins={{ top: 52, right: 12, bottom: 36, left: 52 }}>
             <Grid horizontal />
             <XAxis dataKey="bench" />
             <YAxis tickCount={5} />
-            <Bar dataKey="kourier" />
+            {kourierHasData && <Bar dataKey="kourier" />}
             <Bar dataKey="electronhub" />
             <BarLabels formatter={(v) => `${Math.round(v)}ms`} offset={12} />
             <BarSeriesLogos logos={{ kourier: "/kourier.svg", electronhub: "/electron.svg" }} />
@@ -74,11 +79,11 @@ export default function LatencySection() {
           </BarChart>
         )}
         {tab === "response" && (
-          <BarChart data={responseRows} config={latencyConfig} className="h-full w-full" margins={{ top: 52, right: 12, bottom: 36, left: 52 }}>
+          <BarChart data={responseRows} config={config} className="h-full w-full" margins={{ top: 52, right: 12, bottom: 36, left: 52 }}>
             <Grid horizontal />
             <XAxis dataKey="bench" />
             <YAxis tickCount={5} />
-            <Bar dataKey="kourier" />
+            {kourierHasData && <Bar dataKey="kourier" />}
             <Bar dataKey="electronhub" />
             <BarLabels formatter={(v) => `${v.toFixed(1)}s`} offset={12} />
             <BarSeriesLogos logos={{ kourier: "/kourier.svg", electronhub: "/electron.svg" }} />
@@ -87,12 +92,11 @@ export default function LatencySection() {
           </BarChart>
         )}
         {tab === "context" && (
-          <LineChart data={contextPoints} config={latencyConfig} className="h-full w-full" margins={{ top: 32, right: 12, bottom: 22, left: 52 }}>
+          <LineChart data={contextPoints} config={config} className="h-full w-full" margins={{ top: 32, right: 12, bottom: 22, left: 52 }}>
             <Grid horizontal />
             <XAxis dataKey="ctx" />
             <YAxis tickCount={5} />
             <Crosshair />
-            <Line dataKey="kourier"><ActiveDot /></Line>
             <Line dataKey="electronhub"><ActiveDot /></Line>
             <Legend align="right" />
             <Tooltip labelKey="ctx" valueFormatter={(v) => `${v} ms`} />
@@ -100,7 +104,7 @@ export default function LatencySection() {
         )}
       </div>
 
-      <div className="bench-foot">Lower is better</div>
+      <div className="bench-foot">Lower is better · {KOURIER_NO_TELEMETRY}</div>
     </div>
   );
 }

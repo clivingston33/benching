@@ -142,6 +142,8 @@ body {
 .provider-label { font-size: 13px; font-weight: 700; letter-spacing: -0.01em; }
 .th-kourier .provider-label { color: #2ec27a; }
 .th-electron .provider-label { color: #c084fc; }
+.provider-model { display: block; margin-top: 2px; font-size: 10.5px; font-weight: 500; color: #9a9a9a; letter-spacing: 0; }
+.data-note { margin-top: 14px; font-size: 12px; color: #9a9a9a; line-height: 1.6; max-width: 720px; }
 
 .comp-table tbody td { padding: 16px; vertical-align: middle; }
 .comp-table tbody tr:nth-child(odd) { background: #252525; }

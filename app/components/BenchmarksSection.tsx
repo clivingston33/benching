@@ -10,11 +10,9 @@ import { YAxis } from "@/dither-kit/YAxis";
 import { Tooltip } from "@/dither-kit/Tooltip";
 import { Legend } from "@/dither-kit/Legend";
 
-const terminalRows = [{ bench: "Terminal Bench 2.1", kourier: 63, electronhub: 55 }];
-const terminalConfig = {
-  kourier: { label: "DeepSeek V4 flash 0731 (Kourier)", color: "#1F704C" as const },
-  electronhub: { label: "DeepSeek V4 flash 0731 (ElectronHub)", color: "#A242FB" as const },
-};
+import { benchmarkRows, providerConfig, providers, MODEL_CONFOUND } from "@/lib/benchmark-data";
+
+const terminalConfig = providerConfig;
 
 export default function BenchmarksSection() {
   return (
@@ -27,11 +25,14 @@ export default function BenchmarksSection() {
         <h3 className="bench-title">
           Terminal Bench 2.1 <span className="bench-arrow">↗</span>
         </h3>
-        <p className="bench-desc">DeepSeek v4 flash 0731 — Task success rate · Higher is better · Out of 100</p>
+        <p className="bench-desc">
+          Task success rate (verifier reward = 1.0) · Higher is better · {providers.kourier.tasks_passed}/
+          {providers.kourier.tasks_total} vs {providers.electronhub.tasks_passed}/{providers.electronhub.tasks_total} tasks
+        </p>
       </div>
 
       <div className="chart-wrap" style={{ height: 340 }}>
-        <BarChart data={terminalRows} config={terminalConfig} className="h-full w-full" margins={{ top: 52, right: 12, bottom: 36, left: 40 }}>
+        <BarChart data={benchmarkRows} config={terminalConfig} className="h-full w-full" margins={{ top: 52, right: 12, bottom: 36, left: 40 }}>
           <Grid horizontal />
           <XAxis dataKey="bench" />
           <YAxis tickCount={5} />
@@ -43,7 +44,7 @@ export default function BenchmarksSection() {
           <Tooltip labelKey="bench" valueFormatter={(v) => `${v}`} />
         </BarChart>
       </div>
-      <div className="bench-foot">Terminal Bench 2.1 — Higher is better</div>
+      <div className="bench-foot">Terminal Bench 2.1 — Higher is better · {MODEL_CONFOUND}</div>
     </div>
   );
 }
