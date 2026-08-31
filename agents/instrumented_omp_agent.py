@@ -79,6 +79,13 @@ class InstrumentedOmpAgent(BaseInstalledAgent):
         task_id = self._metadata_value(metadata, {"task_id", "task_name", "task"}) or session_task
         trial_id = self._metadata_value(metadata, {"trial_id", "trial_name", "trial"}) or session_id or str(getattr(self, "context_id", "unknown"))
         invocation_id = uuid.uuid4().hex
+        headers = {
+            "X-Benchmark-Provider": self.provider,
+            "X-Benchmark-Run-Id": self.run_id,
+            "X-Benchmark-Task": task_id,
+            "X-Benchmark-Trial": trial_id,
+            "X-Benchmark-Agent-Invocation-Id": invocation_id,
+        }
         model: dict[str, Any] = {"id": self.model, "name": self.model, "api": self.api, "input": ["text"], "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": self.context_window, "maxTokens": self.max_tokens}
         if self.reasoning_mode == "enabled":
             model["reasoning"] = True
