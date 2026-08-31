@@ -21,6 +21,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from benchmark._util import redact, stream_summary, utc
+from benchmark.concurrency_probe import run_probe
 
 ROOT = Path(__file__).resolve().parents[1]
 os.environ["PATH"] = str(Path.home() / ".local/bin") + os.pathsep + os.environ.get("PATH", "")
