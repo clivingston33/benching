@@ -217,6 +217,8 @@ def summarize(run: dict[str, Any], rows: list[dict[str, Any]], run_dir: Path) ->
     incomplete_provider_streams = sum(1 for row in rows if row["reliability"]["incomplete_provider_stream"])
     return {
         "provider": run.get("provider"),
+        "run_id": run.get("run_id"),
+        "created_at_utc": run.get("created_at_utc"),
         "provider_plan": run.get("provider_plan"),
         "provider_plan_tier": run.get("provider_plan_tier", "unknown"),
         "benchmark_model": run.get("benchmark_model"),

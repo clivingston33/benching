@@ -91,6 +91,11 @@ benchmarkctl full --provider electronhub
 
 benchmarkctl compare --providers kourier,electronhub --concurrency 3
 benchmarkctl compare --providers kourier,electronhub --execution parallel --concurrency 3
+
+benchmarkctl dashboard              # visualize the latest comparison (Next.js app)
+benchmarkctl dashboard --port 8080
+benchmarkctl report                 # CSV exports of the latest comparison
+benchmarkctl report --outdir my-reports
 ```
 
 Each command:
@@ -101,6 +106,8 @@ Each command:
 - `smoke --provider <name>` — runs 3 quick Terminal-Bench tasks to confirm the full pipeline works.
 - `full --provider <name>` — runs all 89 tasks; the real benchmark.
 - `compare --providers <a>,<b> [--execution sequential|parallel]` — runs the given mode for one or more providers, then builds the comparison report. `sequential` (default) runs providers one at a time so they don't compete for host resources — the official, comparable mode; `parallel` runs them concurrently for informal/faster testing. Works with a single provider too. The comparison JSON records `provider_execution_mode` and sets `official_comparison: false` for parallel runs, so a host-contention run can't be mistaken for an official comparison. `--parallel-providers` remains as an alias for `--execution parallel`.
+- `dashboard [--comparison FILE] [--port N]` — visualizes a comparison in the bundled Next.js dashboard (requires Node.js 18+ and npm; installs deps on first run). Defaults to the newest comparison under `runs/`. Charts and tables are generated for whatever providers the comparison contains — add providers to `config/providers.yaml` and they appear automatically.
+- `report [--comparison FILE] [--outdir DIR]` — writes `providers.csv`, `tasks.csv`, and `run_history.csv` for a comparison (pure Python, no Node needed). Default output is `reports/`.
 
 Validation is authoritative. Smoke and full runs refuse to start when provider preflight fails.
 
@@ -145,5 +152,12 @@ Terminal-Bench 2.1 -> Harbor -> OMP -> canonical proxy -> provider HTTPS API
                                                |
                                                +-> run-scoped raw.jsonl
 
-analytics/analyze.py -> metrics.jsonl and comparison JSON
+analytics/analyze.py -> metrics.jsonl and comparison JSON (records run_id per provider)
+analytics/dashboard.py -> dashboard summary + CSV exports
+dashboard/            -> Next.js app visualizing the summary
 ```
+
+`benchmarkctl dashboard` runs `analytics/dashboard.py` against the newest (or
+selected) comparison to produce `dashboard/data/benchmark-summary.json`, then
+serves the Next.js app. `benchmarkctl report` produces the CSV exports without
+Node. Both work with any provider set in `config/providers.yaml`.
