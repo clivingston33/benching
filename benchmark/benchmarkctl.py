@@ -462,38 +462,6 @@ def probe_concurrency(name: str, root_config: dict[str, Any] | None = None, stag
     print(json.dumps({"summary": str(summary_path), "requests": str(jsonl_path)}, indent=2))
 
 
-def dashboard(comparison: Path | None, port: int, root_config: dict[str, Any] | None = None) -> None:
-    """Build the dashboard summary for a comparison and serve the Next.js app."""
-    root_config = root_config or load_yaml()
-    import analytics.dashboard as dash
-
-    comparison_path = comparison or dash.latest_comparison()
-    summary = dash.build_summary(comparison_path, dash.DASHBOARD_DATA / "benchmark-summary.json")
-    print(f"dashboard data: {dash.DASHBOARD_DATA / 'benchmark-summary.json'}")
-    print(f"providers: {', '.join(summary['providers'])}")
-    node = shutil.which("node") or shutil.which("nodejs")
-    npm = shutil.which("npm")
-    if not node or not npm:
-        raise SystemExit("dashboard requires node and npm; install Node.js 18+ to view the dashboard")
-    dashboard_dir = ROOT / "dashboard"
-    if not (dashboard_dir / "node_modules").exists():
-        subprocess.run([npm, "install"], cwd=dashboard_dir, check=True)
-    subprocess.run([npm, "run", "dev", "--", "-p", str(port)], cwd=dashboard_dir, check=True)
-
-
-def report(comparison: Path | None, outdir: Path, root_config: dict[str, Any] | None = None) -> None:
-    """Export CSV reports for a comparison."""
-    root_config = root_config or load_yaml()
-    import analytics.dashboard as dash
-
-    comparison_path = comparison or dash.latest_comparison()
-    summary = dash.build_summary(comparison_path, dash.DASHBOARD_DATA / "benchmark-summary.json")
-    written = dash.write_csvs(summary, outdir)
-    print(f"comparison: {comparison_path}")
-    for path in written:
-        print(f"csv: {path}")
-
-
 def compare(providers: list[str], mode: str, model: str, concurrency: int, trials: int, root_config: dict[str, Any] | None = None, execution: str = "sequential", reasoning: str = "default") -> None:
     root_config = root_config or load_yaml()
     directories: list[Path] = []
@@ -542,12 +510,6 @@ def main() -> None:
     probe_parser = commands.add_parser("probe-concurrency")
     probe_parser.add_argument("--provider", required=True, choices=providers)
     probe_parser.add_argument("--stages", default="2,3,5,6", help="comma-separated concurrency levels to probe")
-    dashboard_parser = commands.add_parser("dashboard", help="visualize the latest (or a specific) comparison in the Next.js dashboard")
-    dashboard_parser.add_argument("--comparison", type=Path, default=None, help="comparison-*.json path (default: newest under runs/)")
-    dashboard_parser.add_argument("--port", type=int, default=3000, help="dashboard dev-server port (default: 3000)")
-    report_parser = commands.add_parser("report", help="export CSV reports (providers/tasks/run_history) for a comparison")
-    report_parser.add_argument("--comparison", type=Path, default=None, help="comparison-*.json path (default: newest under runs/)")
-    report_parser.add_argument("--outdir", type=Path, default=ROOT / "reports", help="output directory (default: reports/)")
     commands.add_parser("prepare-tokenizer")
     args = parser.parse_args()
     if args.command in {"smoke", "full"}:
@@ -561,10 +523,6 @@ def main() -> None:
             raise SystemExit(f"unknown provider(s): {', '.join(unknown)}")
         execution = "parallel" if getattr(args, "parallel_alias", False) else args.execution
         compare(requested, args.mode, args.benchmark_model, args.concurrency, args.trials, root_config, execution=execution, reasoning=args.reasoning)
-    elif args.command == "dashboard":
-        dashboard(args.comparison, args.port, root_config)
-    elif args.command == "report":
-        report(args.comparison, args.outdir, root_config)
     elif args.command == "probe-concurrency":
         probe_concurrency(args.provider, root_config, stages=tuple(int(value.strip()) for value in args.stages.split(",") if value.strip()))
     elif args.command == "prepare-tokenizer":

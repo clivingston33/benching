@@ -9,9 +9,3 @@ runs/
 cache/
 run-logs/
 reports/
-
-# dashboard
-dashboard/node_modules/
-dashboard/.next/
-dashboard/data/benchmark-summary.json
-dashboard/tsconfig.tsbuildinfo
