@@ -9,9 +9,12 @@ import { XAxis } from "@/dither-kit/XAxis";
 import { YAxis } from "@/dither-kit/YAxis";
 import { Tooltip } from "@/dither-kit/Tooltip";
 import { Legend } from "@/dither-kit/Legend";
-import { tokenRows, tokenConfig, APPLES_TO_APPLES } from "@/lib/benchmark-data";
+import { tokenRowsFor, tokenConfig } from "@/lib/benchmark-data";
+import { useRunSelection } from "@/lib/run-selection";
 
 export default function TokenUseSection() {
+  const { selection, label } = useRunSelection();
+  const tokenRows = tokenRowsFor(selection);
   return (
     <div className="benchmarks-card">
       <div className="benchmarks-tabs">
@@ -22,7 +25,7 @@ export default function TokenUseSection() {
         <h3 className="bench-title">
           Token Use <span className="bench-arrow">↗</span>
         </h3>
-        <p className="bench-desc">Median reported tokens per request — Input / Output / Cache</p>
+        <p className="bench-desc">Median reported tokens per request — Input / Output / Cache · {label}</p>
       </div>
 
       <div className="chart-wrap" style={{ height: 360 }}>
@@ -43,7 +46,7 @@ export default function TokenUseSection() {
         </BarChart>
       </div>
 
-      <div className="bench-foot">Lower total is better · {APPLES_TO_APPLES}</div>
+      <div className="bench-foot">Lower total is better · {label}</div>
     </div>
   );
 }

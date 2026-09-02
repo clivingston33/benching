@@ -15,23 +15,25 @@ import { YAxis } from "@/dither-kit/YAxis";
 import { Tooltip } from "@/dither-kit/Tooltip";
 import { Legend } from "@/dither-kit/Legend";
 import {
-  speedOutputRows,
-  speedEffectiveRows,
-  speedContextPoints,
+  speedOutputRowsFor,
+  speedEffectiveRowsFor,
+  speedContextPointsFor,
+  avgProvider,
   providerConfig,
-  APPLES_TO_APPLES,
-  providers,
 } from "@/lib/benchmark-data";
+import { useRunSelection } from "@/lib/run-selection";
 type Tab = "output" | "effective" | "context";
-
-const outputRows = speedOutputRows;
-const effectiveRows = speedEffectiveRows;
-const contextPoints = speedContextPoints;
 
 const speedConfig = providerConfig;
 
 export default function SpeedSection() {
+  const { selection, label } = useRunSelection();
   const [tab, setTab] = useState<Tab>("output");
+  const outputRows = speedOutputRowsFor(selection);
+  const effectiveRows = speedEffectiveRowsFor(selection);
+  const contextPoints = speedContextPointsFor(selection);
+  const k = avgProvider(selection, "kourier");
+  const e = avgProvider(selection, "electronhub");
 
   return (
     <div className="benchmarks-card">
@@ -60,6 +62,8 @@ export default function SpeedSection() {
             : tab === "effective"
               ? "Effective tok/s incl. overhead — Higher is better."
               : "Median decode tokens per second — Higher is better."}
+          {" · "}
+          {label}
         </p>
       </div>
 
@@ -93,21 +97,21 @@ export default function SpeedSection() {
         {tab === "context" && (
           <LineChart data={contextPoints} config={speedConfig} className="h-full w-full" margins={{ top: 32, right: 12, bottom: 22, left: 40 }}>
             <Grid horizontal />
-            <XAxis dataKey="ctx" />
+            <XAxis dataKey="label" />
             <YAxis tickCount={5} />
             <Crosshair />
             <Line dataKey="kourier"><ActiveDot /></Line>
             <Line dataKey="electronhub"><ActiveDot /></Line>
             <Legend align="right" />
-            <Tooltip labelKey="ctx" valueFormatter={(v) => `${v} tok/s`} />
+            <Tooltip labelKey="label" valueFormatter={(v) => `${v} tok/s`} />
           </LineChart>
         )}
       </div>
 
       <div className="bench-foot">
         {tab === "context"
-          ? `Speed — Higher is better · kourier n=${providers.kourier.requests}, electronhub n=${providers.electronhub.requests} requests`
-          : `Speed (tok/s) — Higher is better · ${APPLES_TO_APPLES}`}
+          ? `Speed — Higher is better · kourier n=${k?.requests ?? 0}, electronhub n=${e?.requests ?? 0} requests`
+          : `Speed (tok/s) — Higher is better · ${label}`}
       </div>
     </div>
   );
