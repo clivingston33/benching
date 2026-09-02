@@ -123,8 +123,7 @@ def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) ->
     monkeypatch.setattr(runner, "environment", lambda config, values=None: {})
 
     spec = make_spec(expected_task_count=None)
-    run_json_written: dict = {}
-    monkeypatch.setattr(runner, "run_directory", lambda *args, **kwargs: _FakeRunDir(run_json_written, tmp_path))
+    monkeypatch.setattr(runner, "run_directory", lambda *args, **kwargs: _FakeRunDir(tmp_path))
     monkeypatch.setattr(runner, "harbor_command", lambda *args, **kwargs: ["true"])
     monkeypatch.setattr(runner, "tokenizer_metadata", lambda spec, values=None: {"source": "huggingface"})
 
@@ -141,8 +140,6 @@ def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) ->
 
     monkeypatch.setattr(runner.subprocess, "Popen", _FakePopen)
 
-    from benchmark.config import provider_config
-
     config = {"benchmark": {"name": "suite", "version": "1", "model": "model-x", "reasoning": "default", "tasks_dir": "~/nonexistent/tasks", "smoke_tasks": ["task-a"], "tokenizer": {"repo": "org/t", "revision": "0123456789abcdef"}, "agent": "agents.instrumented_omp_agent:InstrumentedOmpAgent", "max_tokens": 1, "context_window": 2, "run_id_prefix": "bench"}}
     root = {"benchmark": config["benchmark"], "providers": {"acme": {"enabled": True, "env_file": str(tmp_path / "acme.env"), "auth_env": "ACME_API_KEY", "base_url": "https://api.acme.test/v1", "api_model": "acme-model-1"}}}
     (tmp_path / "acme.env").write_text("ACME_API_KEY=secret\n", encoding="utf-8")
@@ -153,10 +150,14 @@ def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) ->
     monkeypatch.setattr(runner, "provider_env_values", lambda name, config: {"ACME_API_KEY": "secret"})
     monkeypatch.setattr(runner, "provider_config", lambda name, root_config=None: (root, root["providers"]["acme"]))
 
-    import subprocess as _sp
     monkeypatch.setattr(runner.subprocess, "run", lambda *args, **kwargs: None)
 
-    runner.run_one(RunOptions(provider="acme", mode="full"), root, progress=lambda phase, msg: calls.append((phase, msg)))
+    from benchmark.status import ProgressEvent
+
+    def collect(event: ProgressEvent) -> None:
+        calls.append((event.phase, event.message))
+
+    runner.run_one(RunOptions(provider="acme", mode="full"), root, progress=collect)
 
     phases = [phase for phase, _ in calls]
     assert phases == ["docker", "tokenizer", "validate", "validate", "proxy", "running", "analyze", "done"]
@@ -168,8 +169,7 @@ def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) ->
 class _FakeRunDir:
     """Minimal stand-in for run_directory()'s returned Path."""
 
-    def __init__(self, written: dict, base: Path) -> None:
-        self._written = written
+    def __init__(self, base: Path) -> None:
         self._base = base
 
     def __truediv__(self, other: str) -> Path:
@@ -181,4 +181,5 @@ class _FakeRunDir:
     @property
     def name(self) -> str:
         return "fake-run"
+
 

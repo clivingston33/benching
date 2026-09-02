@@ -13,7 +13,7 @@ import sys
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -30,17 +30,23 @@ from benchmark.config import (
     provider_env_values,
     resolve,
 )
+from benchmark.status import ProgressEvent, ProgressFn, scan_harbor_results
 from benchmark.tokenizer import tokenizer_metadata
 from benchmark.validation import validate_provider
 
-# Progress event: (phase, message). Phases: docker, validate, tokenizer,
-# proxy, running, analyze, done. The CLI renders these as status lines; a
-# dashboard can subscribe to the same callback for live updates.
-ProgressFn = Callable[[str, str], None]
+# Progress lifecycle phases: docker, tokenizer, validate, proxy, running,
+# analyze, done — plus per-task task_started/task_completed/task_failed/
+# task_timed_out events carrying task-level fields (see benchmark.status).
 
 
-def _noop_progress(phase: str, message: str) -> None:  # noqa: ARG001
+def _noop_progress(event: ProgressEvent) -> None:
     return None
+
+
+def _event(phase: str, message: str = "", **extra: Any) -> ProgressEvent:
+    fields = {"phase": phase, "message": message}
+    fields.update(extra)
+    return ProgressEvent(**fields)
 
 
 @dataclass(frozen=True)
@@ -220,18 +226,111 @@ def set_status(directory: Path, status: str, **extra: Any) -> None:
     (directory / "status.json").write_text(json.dumps({"status": status, "updated_at_utc": utc(), **extra}, indent=2) + "\n", encoding="utf-8")
 
 
-def run_one(options: RunOptions, root_config: dict[str, Any] | None = None, progress: ProgressFn | None = None) -> Path:
+@dataclass
+class RunProgress:
+    """Live task-run monitor: polls harbor job results and tails raw.jsonl.
+
+    The CLI drives this from the foreground thread while run_one runs the
+    harbor subprocess; ``refresh`` is safe to call repeatedly and emits no
+    events (the caller decides when to repaint).
+    """
+
+    jobs_dir: Path
+    total: int
+    raw_jsonl: Path | None = None
+    known_done: set[str] = field(default_factory=set)
+
+    def refresh(self) -> dict[str, Any]:
+        results = scan_harbor_results(self.jobs_dir)
+        counts = {"passed": 0, "failed": 0, "timed_out": 0, "completed": 0}
+        for result in results.values():
+            outcome = result.get("outcome", "completed")
+            counts["completed"] += 1
+            if outcome == "passed":
+                counts["passed"] += 1
+            elif outcome == "timed_out":
+                counts["timed_out"] += 1
+            elif outcome == "failed":
+                counts["failed"] += 1
+        completed = counts["completed"]
+        running = max(0, self.total - completed)
+        return {
+            "completed": completed,
+            "total": self.total,
+            "passed": counts["passed"],
+            "failed": counts["failed"] + counts["timed_out"],
+            "running": running,
+            "results": results,
+        }
+
+
+def _read_live_metrics(raw_path: Path) -> tuple[float | None, float | None]:
+    """Best-effort live mean TTFT (ms) and decode TPS from raw.jsonl rows.
+
+    raw.jsonl carries per-request proxy telemetry: timing fields in ms and
+    provider-reported output tokens; local-token fields only exist after
+    analysis, so live throughput uses provider output tokens.
+    """
+    ttft: list[float] = []
+    decode_tps: list[float] = []
+    if not raw_path.is_file():
+        return None, None
+    try:
+        with raw_path.open(encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(row, dict) or row.get("event_type") != "inference":
+                    continue
+                timing = row.get("timing") or {}
+                tokens = row.get("tokens") or {}
+                first = timing.get("first_content_output_ms")
+                last = timing.get("last_content_output_ms")
+                end = timing.get("stream_completed_ms")
+                tokens_row = tokens.get("output_provider")
+                output_tokens = tokens_row.get("value") if isinstance(tokens_row, dict) else tokens_row
+                if isinstance(first, (int, float)):
+                    ttft.append(float(first))
+                if not isinstance(output_tokens, (int, float)) or output_tokens <= 0:
+                    continue
+                decode_ms = None
+                if isinstance(first, (int, float)) and isinstance(last, (int, float)) and float(last) >= float(first):
+                    decode_ms = float(last) - float(first)
+                if isinstance(end, (int, float)) and float(end) > 0:
+                    decode_tps.append(float(output_tokens) / (float(end) / 1000.0))
+                elif decode_ms and decode_ms > 0:
+                    decode_tps.append(float(output_tokens) / (decode_ms / 1000.0))
+    except OSError:
+        return None, None
+    average = lambda values: round(sum(values) / len(values), 1) if values else None
+    return average(ttft), average(decode_tps)
+
+
+def run_one(
+    options: RunOptions,
+    root_config: dict[str, Any] | None = None,
+    progress: ProgressFn | None = None,
+) -> Path:
     """Execute a benchmark run for one provider; returns the run directory.
 
     Preflight (docker, credentials, tokenizer cache, provider validation) is
     authoritative: any failure raises SystemExit before a run starts.
 
-    ``progress`` is an optional ``(phase, message)`` callback the CLI uses
-    for status rendering; callers that render their own UI pass one too.
+    ``progress`` is an optional callback receiving structured
+    :class:`ProgressEvent` objects (silent when omitted). The harbor
+    subprocess runs on the calling thread; a live UI therefore runs in a
+    background thread and renders from the event stream plus the run
+    directory named in the ``running`` event.
     """
-    progress = progress or _noop_progress
+    emit = progress or _noop_progress
+    started = time.monotonic()
     executable("docker")
-    progress("docker", "docker available")
+    emit(_event("docker", "docker available"))
     root_config, config = provider_config(options.provider, root_config)
     spec = options.benchmark or benchmark_spec(root_config)
     values = provider_env_values(options.provider, config)
@@ -243,13 +342,13 @@ def run_one(options: RunOptions, root_config: dict[str, Any] | None = None, prog
     tokenizer = tokenizer_metadata(spec, values)
     if tokenizer["source"] != "huggingface":
         raise SystemExit("tokenizer is not cached; run `benching tokenizer prepare`")
-    progress("tokenizer", "tokenizer cached")
-    progress("validate", f"validating {options.provider}")
+    emit(_event("tokenizer", "tokenizer cached"))
+    emit(_event("validate", f"validating {options.provider}"))
     result = validate_provider(options.provider, spec, root_config, config, values)
     if not result["success"]:
         raise SystemExit(f"provider validation failed: {result['error_class']}")
     tasks = task_names(options.mode, spec)
-    progress("validate", f"validated {options.provider} ({len(tasks)} tasks)")
+    emit(_event("validate", f"validated {options.provider} ({len(tasks)} tasks)", total=len(tasks)))
     directory = run_directory(options, spec, config, endpoint, api_model, tasks, values)
     (directory / "docker-host-gateway.yaml").write_text("services:\n  main:\n    extra_hosts:\n      - host.docker.internal:host-gateway\n", encoding="utf-8")
     command = harbor_command(options, spec, config, endpoint, api_model, directory, tasks)
@@ -257,10 +356,10 @@ def run_one(options: RunOptions, root_config: dict[str, Any] | None = None, prog
     env = environment(config, values)
     proxy: subprocess.Popen[bytes] | None = None
     try:
-        progress("proxy", "starting telemetry proxy")
+        emit(_event("proxy", "starting telemetry proxy"))
         proxy = start_proxy(directory, options.proxy_port)
         set_status(directory, "running", pid=None)
-        progress("running", f"running {len(tasks)} tasks at concurrency {options.concurrency}")
+        emit(_event("running", f"running {len(tasks)} tasks at concurrency {options.concurrency}", total=len(tasks), run_dir=str(directory)))
         with (directory / "harbor.stdout.log").open("wb") as stdout, (directory / "harbor.stderr.log").open("wb") as stderr:
             process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=stdout, stderr=stderr, start_new_session=True)
         (directory / "pid").write_text(str(process.pid) + "\n", encoding="utf-8")
@@ -269,9 +368,9 @@ def run_one(options: RunOptions, root_config: dict[str, Any] | None = None, prog
         set_status(directory, "completed" if return_code == 0 else "failed", pid=process.pid, return_code=return_code)
         if return_code != 0:
             raise SystemExit(return_code)
-        progress("analyze", "normalizing telemetry")
+        emit(_event("analyze", "normalizing telemetry"))
         subprocess.run([sys.executable, str(ROOT / "analytics" / "analyze.py"), str(directory)], cwd=ROOT, check=True)
-        progress("done", "run complete")
+        emit(_event("done", "run complete", elapsed_seconds=round(time.monotonic() - started, 1)))
         return directory
     except KeyboardInterrupt:
         set_status(directory, "interrupted")
