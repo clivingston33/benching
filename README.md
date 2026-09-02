@@ -1,26 +1,72 @@
 # benching
 
-Generic LLM-provider benchmarking harness: run a terminal-agent task suite against one or more OpenAI-compatible providers behind a telemetry proxy, and compare latency, throughput, reliability, and task pass rates.
+Benchmark LLM API providers against terminal-agent task suites: run a task suite against one or more OpenAI-compatible providers behind a telemetry proxy, and compare latency, throughput, reliability, and task pass rates.
 
 Suite and provider identity live entirely in `config/benchmark.yaml`; nothing in the code is specific to any one benchmark or provider.
 
 ## Layout
 
 ```text
-benchmark/benchmarkctl.py    CLI runner (smoke / full / validate / probe-concurrency / compare)
-benchmark/concurrency_probe.py  direct staged concurrency-capability probe
-proxy/telemetry_proxy.py     OpenAI-compatible streaming proxy; per-run JSONL telemetry
-analytics/analyze.py         normalize telemetry; build metrics.jsonl and comparison JSON
+cli/                       Typer command layer (thin: parse, call, render)
+  app.py                   benching app + entry point
+  doctor.py                benching doctor
+  config.py                benching config
+  providers.py             benching provider
+  runs.py                  benching runs
+  results.py               benching results
+  tokenizer.py             benching tokenizer
+  run.py, compare.py       benching run / compare leaf commands
+benchmark/                 execution layer (importable by a dashboard)
+  config.py                suite identity + provider registry from config
+  runner.py                run orchestration, harbor command, proxy lifecycle
+  validation.py            provider preflight
+  concurrency.py           staged concurrency probe
+  tokenizer.py             pinned tokenizer cache
+  _paths.py                shared repo/runtime paths
+proxy/telemetry_proxy.py   OpenAI-compatible streaming proxy; per-run JSONL telemetry
+analytics/analyze.py       normalize telemetry; build metrics.jsonl + comparison JSON
 agents/instrumented_omp_agent.py  Harbor agent driving OMP through the proxy
-config/benchmark.yaml        benchmark suite identity + provider registry
+config/benchmark.yaml      benchmark suite identity + provider registry
 config/provider.env.example  template for a provider credential file
 ```
+
+The CLI modules contain almost no benchmark logic: they parse arguments, call the `benchmark/` layer, and render results. A dashboard can import the same `benchmark/` functions.
 
 ## Requirements
 
 - Python 3.12+, `docker`
 - `harbor` and `omp` (see the org's setup docs); `harbor` must be on `PATH` and `omp` available inside the Harbor task image
 - A provider serving an OpenAI-compatible streaming API
+
+## Commands
+
+```text
+benching doctor                    environment health checks
+benching config show               suite identity + provider registry
+
+benching provider list             providers with model + credential status
+benching provider validate <name>  credentials + streaming model access
+benching provider probe <name>     concurrency ceiling probe
+
+benching run <provider>            run the full suite
+benching run <provider> --smoke    run the quick smoke subset
+benching run <provider> --concurrency 3
+
+benching compare <a> <b>           run both, build comparison
+benching compare <a> <b> --execution parallel
+
+benching runs                      list runs, newest first
+benching runs show <run-id>        run config (prefix or 'latest' accepted)
+benching runs latest
+
+benching results show <run-id>     latency / reliability / task tables
+benching results latest
+
+benching tokenizer prepare         download the pinned tokenizer
+benching tokenizer status          cached?
+```
+
+`--help` is available at every level.
 
 ## Configure a benchmark suite
 
@@ -78,7 +124,7 @@ chmod 600 config/myprovider.env
 
 `<NAME>_BASE_URL` and `<NAME>_API_MODEL` in the env file override the YAML values; the YAML `auth_env` names the key the harness reads.
 
-No code changes are needed; enabled providers are picked up automatically by `validate`, `smoke`, `full`, `probe-concurrency`, and `compare`. Set `strict_model_check: true` to require `api_model` in the provider's `/models` catalog during validation.
+No code changes are needed; enabled providers are picked up automatically by `provider list` / `provider validate` / `provider probe`, `run`, and `compare`. Set `strict_model_check: true` to require `api_model` in the provider's `/models` catalog during validation.
 
 ## Quickstart
 
@@ -86,36 +132,13 @@ No code changes are needed; enabled providers are picked up automatically by `va
 python3 -m pip install -e .
 cp config/provider.env.example config/myprovider.env   # then fill in the key
 chmod 600 config/myprovider.env
-benchmarkctl prepare-tokenizer     # cache the pinned tokenizer once
-benchmarkctl smoke --provider myprovider
+benching doctor                     # confirm the environment is ready
+benching tokenizer prepare          # cache the pinned tokenizer once
+benching provider validate myprovider
+benching run myprovider --smoke
 ```
 
-That validates credentials, runs the smoke tasks, and produces a run under `runs/`.
-
-## Commands
-
-```bash
-benchmarkctl prepare-tokenizer
-benchmarkctl validate --provider myprovider
-benchmarkctl probe-concurrency --provider myprovider
-benchmarkctl smoke --provider myprovider
-benchmarkctl full --provider myprovider
-benchmarkctl compare --providers myprovider,otherprovider --concurrency 3
-benchmarkctl compare --providers myprovider,otherprovider --execution parallel --concurrency 3
-```
-
-Each command:
-
-- `prepare-tokenizer` — downloads the pinned tokenizer (`tokenizer.json`, config, etc.) into the local cache once, if not already present. Runs use the cache read-only and never re-download.
-- `validate --provider <name>` — checks credentials and that the provider serves the configured model over streaming; every run re-validates first.
-- `probe-concurrency --provider <name> [--stages 2,3,5,6]` — stages direct concurrent-stream requests to find the provider's concurrency ceiling, stopping at the first rejected stage; doesn't touch benchmark scores.
-- `smoke --provider <name>` — runs the configured smoke tasks to confirm the pipeline.
-- `full --provider <name>` — runs the full suite; the real benchmark.
-- `compare --providers <a>,<b> [--execution sequential|parallel]` — runs the given mode for each provider, then builds the comparison report. `sequential` (default) runs providers one at a time so they don't compete for host resources — the official, comparable mode. `parallel` runs them concurrently for informal/faster testing. The comparison JSON records `provider_execution_mode` and sets `official_comparison: false` for parallel runs, so a host-contention run can't be mistaken for an official comparison. `--parallel-providers` remains as an alias for `--execution parallel`.
-
-Validation is authoritative; smoke and full runs refuse to start when provider preflight fails.
-
-Reasoning is an explicit mode — `default`, `enabled`, or `disabled`. `default` injects no override, so the provider/model behaves normally; `disabled` makes the proxy inject `reasoning.enabled=false`; `enabled` sets it true. The mode is recorded as `reasoning_mode` in `run.json`.
+Smoke validates credentials, runs the smoke tasks, and produces a run under `runs/`.
 
 ## Run artifacts
 
@@ -131,6 +154,8 @@ metrics.jsonl            normalized analytical records
 harbor/                  runner task artifacts
 *.log                    runner and proxy logs
 ```
+
+`benching runs` lists these; `benching results show` reads them. Run-id prefixes and `latest` resolve automatically.
 
 ## Metric definitions
 
@@ -155,6 +180,8 @@ Task suite -> Harbor -> OMP -> telemetry proxy -> provider HTTPS API
 analytics/analyze.py -> metrics.jsonl and comparison JSON
 ```
 
-## Rebranding history
+A live progress dashboard is a later milestone: `benchmark.runner.run_one` already reports deterministic `(phase, message)` progress events through an optional callback, and the CLI renders them as status lines; a dashboard can subscribe to the same hook.
 
-This repository previously hardcoded a Terminal-Bench 2.1 comparison of the Kourier and ElectronHub providers and was renamed from `provider-benchmark`. It now ships as a generic harness (this branch, `standardize/generic-benchmark-harness`); a follow-up is planned to expose the same functionality as a unified CLI.
+## History
+
+This repository previously hardcoded a Terminal-Bench 2.1 comparison of the Kourier and ElectronHub providers and was renamed from `provider-benchmark` to `benching`. It now ships as a generic harness; the earlier `benchmarkctl` command line was replaced by the `benching` hierarchy.

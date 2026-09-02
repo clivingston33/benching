@@ -37,8 +37,17 @@ def run(
         trials=trials,
     )
     console.print(f"[bold]{spec.display_name}[/bold] — [cyan]{provider}[/cyan] ({mode}, concurrency {concurrency})")
+    seen: set[str] = set()
+
+    def render_progress(phase: str, message: str) -> None:
+        if phase in {"running", "done", "analyze"}:
+            return
+        marker = "•" if phase in seen else "✓"
+        seen.add(phase)
+        console.print(f"[green]{marker}[/green] {message}")
+
     try:
-        directory = run_one(options, root)
+        directory = run_one(options, root, progress=render_progress)
     except SystemExit as exc:
         console.print("[red]Run failed[/red]")
         raise typer.Exit(1 if isinstance(exc.code, int) else exc.code or 1) from exc

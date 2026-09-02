@@ -108,3 +108,77 @@ def test_validation_classifies_cloudflare_edge_denial() -> None:
 def test_stream_validation_detects_reasoning_or_text() -> None:
     body = b'data: {"choices":[{"delta":{"reasoning":"thinking"}}]}\n\ndata: [DONE]\n\n'
     assert parse_stream_body(body)[0] is True
+
+
+def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) -> None:
+    """run_one reports deterministic preflight phases through the hook."""
+    import benchmark.runner as runner
+
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(runner, "executable", lambda name: None)
+    monkeypatch.setattr(runner, "start_proxy", lambda directory, port=8765: None)
+    monkeypatch.setattr(runner, "stop_process", lambda process: None)
+    monkeypatch.setattr(runner, "validate_provider", lambda *args, **kwargs: {"success": True})
+    monkeypatch.setattr(runner, "task_names", lambda mode, spec: ["task-a"])
+    monkeypatch.setattr(runner, "environment", lambda config, values=None: {})
+
+    spec = make_spec(expected_task_count=None)
+    run_json_written: dict = {}
+    monkeypatch.setattr(runner, "run_directory", lambda *args, **kwargs: _FakeRunDir(run_json_written, tmp_path))
+    monkeypatch.setattr(runner, "harbor_command", lambda *args, **kwargs: ["true"])
+    monkeypatch.setattr(runner, "tokenizer_metadata", lambda spec, values=None: {"source": "huggingface"})
+
+    captured: dict = {}
+
+    class _FakePopen:
+        pid = 1234
+
+        def __init__(self, command, **kwargs):
+            captured["command"] = command
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(runner.subprocess, "Popen", _FakePopen)
+
+    from benchmark.config import provider_config
+
+    config = {"benchmark": {"name": "suite", "version": "1", "model": "model-x", "reasoning": "default", "tasks_dir": "~/nonexistent/tasks", "smoke_tasks": ["task-a"], "tokenizer": {"repo": "org/t", "revision": "0123456789abcdef"}, "agent": "agents.instrumented_omp_agent:InstrumentedOmpAgent", "max_tokens": 1, "context_window": 2, "run_id_prefix": "bench"}}
+    root = {"benchmark": config["benchmark"], "providers": {"acme": {"enabled": True, "env_file": str(tmp_path / "acme.env"), "auth_env": "ACME_API_KEY", "base_url": "https://api.acme.test/v1", "api_model": "acme-model-1"}}}
+    (tmp_path / "acme.env").write_text("ACME_API_KEY=secret\n", encoding="utf-8")
+
+    monkeypatch.setattr(runner, "load_yaml", lambda: root)
+    monkeypatch.setattr(runner, "benchmark_spec", lambda config: make_spec(expected_task_count=None))
+    monkeypatch.setattr(runner, "resolve", lambda name, config, values=None: ("https://api.acme.test/v1", "acme-model-1"))
+    monkeypatch.setattr(runner, "provider_env_values", lambda name, config: {"ACME_API_KEY": "secret"})
+    monkeypatch.setattr(runner, "provider_config", lambda name, root_config=None: (root, root["providers"]["acme"]))
+
+    import subprocess as _sp
+    monkeypatch.setattr(runner.subprocess, "run", lambda *args, **kwargs: None)
+
+    runner.run_one(RunOptions(provider="acme", mode="full"), root, progress=lambda phase, msg: calls.append((phase, msg)))
+
+    phases = [phase for phase, _ in calls]
+    assert phases == ["docker", "tokenizer", "validate", "validate", "proxy", "running", "analyze", "done"]
+    assert calls[0][1] == "docker available"
+    assert calls[2][1] == "validating acme"
+    assert calls[-1][1] == "run complete"
+
+
+class _FakeRunDir:
+    """Minimal stand-in for run_directory()'s returned Path."""
+
+    def __init__(self, written: dict, base: Path) -> None:
+        self._written = written
+        self._base = base
+
+    def __truediv__(self, other: str) -> Path:
+        return self._base / other
+
+    def mkdir(self, *args, **kwargs) -> None:
+        return None
+
+    @property
+    def name(self) -> str:
+        return "fake-run"
+

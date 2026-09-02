@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,6 +32,15 @@ from benchmark.config import (
 )
 from benchmark.tokenizer import tokenizer_metadata
 from benchmark.validation import validate_provider
+
+# Progress event: (phase, message). Phases: docker, validate, tokenizer,
+# proxy, running, analyze, done. The CLI renders these as status lines; a
+# dashboard can subscribe to the same callback for live updates.
+ProgressFn = Callable[[str, str], None]
+
+
+def _noop_progress(phase: str, message: str) -> None:  # noqa: ARG001
+    return None
 
 
 @dataclass(frozen=True)
@@ -210,13 +220,18 @@ def set_status(directory: Path, status: str, **extra: Any) -> None:
     (directory / "status.json").write_text(json.dumps({"status": status, "updated_at_utc": utc(), **extra}, indent=2) + "\n", encoding="utf-8")
 
 
-def run_one(options: RunOptions, root_config: dict[str, Any] | None = None) -> Path:
+def run_one(options: RunOptions, root_config: dict[str, Any] | None = None, progress: ProgressFn | None = None) -> Path:
     """Execute a benchmark run for one provider; returns the run directory.
 
     Preflight (docker, credentials, tokenizer cache, provider validation) is
     authoritative: any failure raises SystemExit before a run starts.
+
+    ``progress`` is an optional ``(phase, message)`` callback the CLI uses
+    for status rendering; callers that render their own UI pass one too.
     """
+    progress = progress or _noop_progress
     executable("docker")
+    progress("docker", "docker available")
     root_config, config = provider_config(options.provider, root_config)
     spec = options.benchmark or benchmark_spec(root_config)
     values = provider_env_values(options.provider, config)
@@ -228,10 +243,13 @@ def run_one(options: RunOptions, root_config: dict[str, Any] | None = None) -> P
     tokenizer = tokenizer_metadata(spec, values)
     if tokenizer["source"] != "huggingface":
         raise SystemExit("tokenizer is not cached; run `benching tokenizer prepare`")
+    progress("tokenizer", "tokenizer cached")
+    progress("validate", f"validating {options.provider}")
     result = validate_provider(options.provider, spec, root_config, config, values)
     if not result["success"]:
         raise SystemExit(f"provider validation failed: {result['error_class']}")
     tasks = task_names(options.mode, spec)
+    progress("validate", f"validated {options.provider} ({len(tasks)} tasks)")
     directory = run_directory(options, spec, config, endpoint, api_model, tasks, values)
     (directory / "docker-host-gateway.yaml").write_text("services:\n  main:\n    extra_hosts:\n      - host.docker.internal:host-gateway\n", encoding="utf-8")
     command = harbor_command(options, spec, config, endpoint, api_model, directory, tasks)
@@ -239,8 +257,10 @@ def run_one(options: RunOptions, root_config: dict[str, Any] | None = None) -> P
     env = environment(config, values)
     proxy: subprocess.Popen[bytes] | None = None
     try:
+        progress("proxy", "starting telemetry proxy")
         proxy = start_proxy(directory, options.proxy_port)
         set_status(directory, "running", pid=None)
+        progress("running", f"running {len(tasks)} tasks at concurrency {options.concurrency}")
         with (directory / "harbor.stdout.log").open("wb") as stdout, (directory / "harbor.stderr.log").open("wb") as stderr:
             process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=stdout, stderr=stderr, start_new_session=True)
         (directory / "pid").write_text(str(process.pid) + "\n", encoding="utf-8")
@@ -249,7 +269,9 @@ def run_one(options: RunOptions, root_config: dict[str, Any] | None = None) -> P
         set_status(directory, "completed" if return_code == 0 else "failed", pid=process.pid, return_code=return_code)
         if return_code != 0:
             raise SystemExit(return_code)
+        progress("analyze", "normalizing telemetry")
         subprocess.run([sys.executable, str(ROOT / "analytics" / "analyze.py"), str(directory)], cwd=ROOT, check=True)
+        progress("done", "run complete")
         return directory
     except KeyboardInterrupt:
         set_status(directory, "interrupted")
