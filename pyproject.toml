@@ -11,14 +11,16 @@ dependencies = [
   "PyYAML>=6.0,<7",
   "tokenizers>=0.20,<1",
   "huggingface_hub>=0.34,<2",
+  "typer>=0.12,<1",
+  "rich>=13.0,<15",
 ]
 
 [project.scripts]
-benchmarkctl = "benchmark.benchmarkctl:main"
+benching = "cli.app:main"
 benchmark-analyze = "analytics.analyze:main"
 
 [tool.setuptools.packages.find]
-include = ["benchmark*", "proxy*", "analytics*", "agents*"]
+include = ["benchmark*", "proxy*", "analytics*", "agents*", "cli*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
