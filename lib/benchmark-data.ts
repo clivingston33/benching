@@ -109,7 +109,8 @@ const mean = (vals: (number | null)[]): number | null => {
   return clean.length ? clean.reduce((a, b) => a + b, 0) / clean.length : null;
 };
 
-const round1 = (v: number | null): number | null => (v == null ? null : Math.round(v * 10) / 10);
+/** Round to hundredths (2 decimals) — averages can produce long floats. */
+const round2 = (v: number | null): number | null => (v == null ? null : Math.round(v * 100) / 100);
 
 /** Average ProviderMetrics across the selected runs for one provider. */
 export function avgProvider(selection: RunSelection, provider: ProviderKey): ProviderMetrics | null {
@@ -117,14 +118,14 @@ export function avgProvider(selection: RunSelection, provider: ProviderKey): Pro
   if (!runs.length) return null;
   const samples = runs.map((r) => r.providers[provider]).filter((p): p is ProviderMetrics => p != null);
   if (!samples.length) return null;
-  const pick = (f: (p: ProviderMetrics) => number | null) => mean(samples.map(f));
+  const pick = (f: (p: ProviderMetrics) => number | null) => round2(mean(samples.map(f)));
   const pickInt = (f: (p: ProviderMetrics) => number) => Math.round(mean(samples.map(f)) ?? 0);
   const last = samples[samples.length - 1];
   return {
     requests: samples.reduce((a, p) => a + p.requests, 0),
-    success_rate: round1(pick((p) => p.success_rate)),
-    stream_completion_rate: round1(pick((p) => p.stream_completion_rate)),
-    timeout_rate: round1(pick((p) => p.timeout_rate)),
+    success_rate: round2(pick((p) => p.success_rate)),
+    stream_completion_rate: round2(pick((p) => p.stream_completion_rate)),
+    timeout_rate: round2(pick((p) => p.timeout_rate)),
     http_errors: samples.reduce((a, p) => a + p.http_errors, 0),
     provider_failures: samples.reduce((a, p) => a + p.provider_failures, 0),
     downstream_cancellations: samples.reduce((a, p) => a + p.downstream_cancellations, 0),
@@ -140,7 +141,7 @@ export function avgProvider(selection: RunSelection, provider: ProviderKey): Pro
     context_window: last.context_window,
     tasks_passed: pickInt((p) => p.tasks_passed),
     tasks_total: last.tasks_total,
-    task_pass_rate: round1(pick((p) => p.task_pass_rate)),
+    task_pass_rate: round2(pick((p) => p.task_pass_rate)),
     errors: samples.reduce((a, p) => a + p.errors, 0),
   };
 }
@@ -170,9 +171,9 @@ export function avgContextScaling(selection: RunSelection, provider: ProviderKey
     };
     return {
       label,
-      speed: pick("speed", "decode_tps"),
-      ttft: pick("ttft", "ttft_ms"),
-      failure: pick("failure", "failure_rate"),
+      speed: round2(pick("speed", "decode_tps")),
+      ttft: round2(pick("ttft", "ttft_ms")),
+      failure: round2(pick("failure", "failure_rate")),
     };
   });
 }

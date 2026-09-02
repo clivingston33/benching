@@ -79,7 +79,7 @@ export function Tooltip({
       }}
     >
       {heading ? (
-        <div className="mb-0.5 font-mono text-[10px] text-[#9a9a9a]">
+        <div className="mb-0.5 whitespace-nowrap font-mono text-[10px] text-[#9a9a9a]">
           {heading}
         </div>
       ) : null}
@@ -102,8 +102,8 @@ export function Tooltip({
               className="size-2 rounded-[1px]"
               style={{ backgroundColor: rgb(item.seed.fill) }}
             />
-            <span className="text-[#9a9a9a]">{item.label}</span>
-            <span className="ml-auto pl-2 text-[#e8e8e8]">
+            <span className="whitespace-nowrap text-[#9a9a9a]">{item.label}</span>
+            <span className="ml-auto whitespace-nowrap pl-2 text-[#e8e8e8]">
               {valueFormatter
                 ? valueFormatter(item.value, item.name)
                 : item.value.toLocaleString()}

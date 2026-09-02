@@ -90,25 +90,25 @@ def provider_stats(c: dict, run_id: str) -> dict:
 
     def avg_tokens(field: str) -> float | None:
         total = tok.get(field)
-        return (total / reqs) if total is not None and reqs else None
+        return round((total / reqs), 2) if total is not None and reqs else None
 
     return {
         "requests": reqs,
-        "success_rate": round(rel["request_success_rate"] * 100, 1),
-        "stream_completion_rate": round(rel["stream_completion_rate"] * 100, 1),
+        "success_rate": round(rel["request_success_rate"] * 100, 2),
+        "stream_completion_rate": round(rel["stream_completion_rate"] * 100, 2),
         "timeout_rate": round(rel["timeout_rate"] * 100, 2),
         "http_errors": rel.get("errors", 0) or 0,
         "provider_failures": rel.get("provider_failures", 0),
         "downstream_cancellations": rel.get("downstream_cancellations", 0),
         "incomplete_provider_streams": rel.get("incomplete_provider_streams", 0),
-        "median_ttft_ms": tim["ttft_ms"]["median"],
-        "p95_ttft_ms": tim["ttft_ms"]["p95"],
-        "median_e2e_ms": tim["end_to_end_latency_ms"]["median"],
-        "median_decode_tps": tim["decode_tps"]["median"],
-        "median_effective_tps": tim["effective_tps"]["median"],
+        "median_ttft_ms": round(tim["ttft_ms"]["median"], 2),
+        "p95_ttft_ms": round(tim["ttft_ms"]["p95"], 2),
+        "median_e2e_ms": round(tim["end_to_end_latency_ms"]["median"], 2),
+        "median_decode_tps": round(tim["decode_tps"]["median"], 2),
+        "median_effective_tps": round(tim["effective_tps"]["median"], 2),
         "median_input_tokens": avg_tokens("input_provider"),
         "median_output_tokens": avg_tokens("output_provider"),
-        "median_cache_tokens": median_cache,
+        "median_cache_tokens": round(median_cache, 2) if median_cache is not None else None,
         "context_window": CONTEXT_WINDOW,
         "tasks_passed": c["benchmark"]["passed_tasks"],
         "tasks_total": c["benchmark"]["total_tasks"],
@@ -163,10 +163,10 @@ def context_scaling(c: dict) -> dict:
     for label, b in buckets.items():
         if not b.get("requests"):
             continue
-        speed.append({"label": label, "decode_tps": b["decode_tps"]["median"]})
-        ttft.append({"label": label, "ttft_ms": b["ttft_ms"]["median"]})
+        speed.append({"label": label, "decode_tps": round(b["decode_tps"]["median"], 2)})
+        ttft.append({"label": label, "ttft_ms": round(b["ttft_ms"]["median"], 2)})
         rate = b.get("success_rate")
-        failure.append({"label": label, "failure_rate": None if rate is None else round((1 - rate) * 100, 1)})
+        failure.append({"label": label, "failure_rate": None if rate is None else round((1 - rate) * 100, 2)})
     out["speed"] = speed
     out["ttft"] = ttft
     out["failure"] = failure
