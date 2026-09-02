@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normalize run telemetry and compare compatible Terminal-Bench runs."""
+"""Normalize run telemetry and compare compatible benchmark runs."""
 from __future__ import annotations
 
 import argparse
@@ -289,7 +289,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("runs", nargs="+", type=Path)
     parser.add_argument("--execution", choices=("sequential", "parallel"), default="sequential", help="how provider runs were scheduled")
-    parser.add_argument("--tokenizer", default=None, help="Exact DeepSeek tokenizer JSON path")
+    parser.add_argument("--tokenizer", default=None, help="Exact tokenizer JSON path (overrides per-run tokenizer)")
     args = parser.parse_args()
     run_data = [read_json(path / "run.json") for path in args.runs]
     if len(run_data) > 1:
@@ -302,14 +302,15 @@ def main() -> None:
         normalized = normalize(run, raw, tokenizer)
         write_jsonl(run_dir / "metrics.jsonl", normalized)
         summaries.append(summarize(run, normalized, run_dir))
+    benchmark_label = " ".join(part for part in (run_data[0].get("benchmark"), run_data[0].get("benchmark_version")) if part) or "unknown"
     comparison = {
         "schema_version": 1,
         "created_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        "benchmark": "Terminal-Bench 2.1",
+        "benchmark": benchmark_label,
         "benchmark_model": run_data[0].get("benchmark_model"),
         "provider_execution_mode": args.execution,
         "official_comparison": args.execution == "sequential",
-        "tokenizer": run_data[0].get("tokenizer") or {"repo": "deepseek-ai/DeepSeek-V4-Flash-0731", "revision": "7872f01b1d1fe23eabc4c98b48bffcef5a386062", "local_cache": tokenizer_path, "source": "huggingface" if tokenizer is not None else "unavailable"},
+        "tokenizer": run_data[0].get("tokenizer") or {"repo": None, "revision": None, "local_cache": tokenizer_path, "source": "unavailable"},
         "formulas": {
             "ttft_ms": "first_content_output - request_started",
             "decode_duration_ms": "last_content_output - first_content_output",

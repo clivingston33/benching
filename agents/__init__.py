@@ -1,1 +1,1 @@
-"""Provider benchmark Harbor agents."""
+"""Benchmark Harbor agents."""

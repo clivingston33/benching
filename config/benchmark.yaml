@@ -1,0 +1,56 @@
+# Benchmark suite identity. All fields are read at run time from this file;
+# nothing benchmark-specific is hardcoded in the harness.
+schema_version: 1
+benchmark:
+  name: terminal-bench
+  version: "2.1"
+  model: deepseek-v4-flash-0731
+  reasoning: default
+  tasks_dir: ~/terminal-bench-2-1/tasks
+  expected_task_count: 89
+  # Quick pipeline check; must be a subset of the suite tasks.
+  smoke_tasks:
+    - break-filter-js-from-html
+    - cancel-async-tasks
+    - adaptive-rejection-sampler
+  agent: agents.instrumented_omp_agent:InstrumentedOmpAgent
+  # Per-inference request limits; raise for long-horizon agent benchmarks.
+  max_tokens: 49152
+  context_window: 262144
+  run_id_prefix: bench
+  tokenizer:
+    repo: deepseek-ai/DeepSeek-V4-Flash-0731
+    revision: 7872f01b1d1fe23eabc4c98b48bffcef5a386062
+    # Optional env var naming a local tokenizer.json/dir that overrides the
+    # pinned repo cache. The same variable name may be shared by every provider
+    # env file; omit to always use the pinned repo cache.
+    env_override: TOKENIZER_PATH
+
+# A provider needs an enabled entry here plus a config/<name>.env file with
+# its credentials (copy config/provider.env.example). Providers are picked up
+# automatically by validate / smoke / full / probe-concurrency / compare.
+#
+# Example:
+# providers:
+#   kourier:
+#     enabled: true
+#     env_file: config/kourier.env
+#     auth_env: KOURIER_API_KEY
+#     base_url: https://api.kourier.sh/v1
+#     api_model: DSV4-Flash-0731
+#     api: openai-completions
+#     strict_model_check: false
+#     plan: soft_launch
+#     plan_tier: null
+#     routing_entitlement: omega
+#     benchmark_concurrency_limit: 3
+#   electronhub:
+#     enabled: true
+#     env_file: config/electronhub.env
+#     auth_env: ELECTRONHUB_API_KEY
+#     base_url: https://api.electronhub.ai/v1
+#     api_model: deepseek-v4-flash-0731:dev
+#     api: openai-completions
+#     strict_model_check: true
+#     plan: dev_coding
+#     plan_tier: Coding Plan (DevPass)

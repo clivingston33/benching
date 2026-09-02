@@ -60,7 +60,7 @@ def test_usage_preserves_provider_values() -> None:
 
 def test_reasoning_disabled_injected_into_forwarded_body(tmp_path: Path) -> None:
     # reasoning: disabled injects reasoning.enabled=false so providers defaulting
-    # to reasoning-on (ElectronHub) match the explicit disabled mode.
+    # to reasoning-on match the explicit disabled mode.
     import proxy.telemetry_proxy as mod
 
     captured: dict = {}
@@ -72,9 +72,9 @@ def test_reasoning_disabled_injected_into_forwarded_body(tmp_path: Path) -> None
     original = mod.Proxy.forward
     mod.Proxy.forward = fake_forward
     try:
-        proxy = mod.Proxy(mod.JsonlWriter(Path("/tmp/unused-events.jsonl")), {"electronhub": {"upstream": "https://example.test/v1", "plan": "dev_coding", "plan_tier": "unknown", "reasoning": "disabled"}})
-        body = b'{"model":"deepseek-v4-flash-0731:dev","messages":[]}'
-        request = b"POST /electronhub/chat/completions HTTP/1.1\r\nX-Benchmark-Provider: electronhub\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
+        proxy = mod.Proxy(mod.JsonlWriter(Path("/tmp/unused-events.jsonl")), {"acme": {"upstream": "https://example.test/v1", "plan": "trial", "plan_tier": "unknown", "reasoning": "disabled"}})
+        body = b'{"model":"acme-model-1","messages":[]}'
+        request = b"POST /acme/chat/completions HTTP/1.1\r\nX-Benchmark-Provider: acme\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
         async def run() -> None:
             await proxy.handle(await _fake_reader(request), _FakeWriter())
         asyncio.run(run())
@@ -97,9 +97,9 @@ def test_reasoning_default_not_injected_into_forwarded_body(tmp_path: Path) -> N
     original = mod.Proxy.forward
     mod.Proxy.forward = fake_forward
     try:
-        proxy = mod.Proxy(mod.JsonlWriter(tmp_path / "events.jsonl"), {"kourier": {"upstream": "https://example.test/v1", "plan": "standard", "reasoning": "default"}})
-        body = b'{"model":"DSV4-Flash-0731","messages":[]}'
-        request = b"POST /kourier/chat/completions HTTP/1.1\r\nX-Benchmark-Provider: kourier\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
+        proxy = mod.Proxy(mod.JsonlWriter(tmp_path / "events.jsonl"), {"globex": {"upstream": "https://example.test/v1", "plan": "standard", "reasoning": "default"}})
+        body = b'{"model":"globex-model-1","messages":[]}'
+        request = b"POST /globex/chat/completions HTTP/1.1\r\nX-Benchmark-Provider: globex\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
         async def run() -> None:
             await proxy.handle(await _fake_reader(request), _FakeWriter())
         asyncio.run(run())
@@ -109,8 +109,8 @@ def test_reasoning_default_not_injected_into_forwarded_body(tmp_path: Path) -> N
 
 
 def test_provider_url_joining_never_duplicates_v1() -> None:
-    assert join_upstream_path("https://api.kourier.sh/v1", "/chat/completions") == "/v1/chat/completions"
-    assert join_upstream_path("https://api.electronhub.ai/v1/", "chat/completions") == "/v1/chat/completions"
+    assert join_upstream_path("https://api.acme.test/v1", "/chat/completions") == "/v1/chat/completions"
+    assert join_upstream_path("https://api.globex.test/v1/", "chat/completions") == "/v1/chat/completions"
 
 
 def test_routes_reject_non_https(tmp_path: Path) -> None:

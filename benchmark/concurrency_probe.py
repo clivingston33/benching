@@ -52,7 +52,7 @@ def one_request(provider: str, plan: str | None, tier: str, endpoint: str, api_m
     try:
         barrier.wait(timeout=10)
         payload = json.dumps({"model": api_model, "messages": [{"role": "user", "content": PROMPT}], "max_tokens": MAX_TOKENS, "stream": True, "reasoning": {"enabled": False}}).encode()
-        request = Request(endpoint.rstrip("/") + "/chat/completions", data=payload, headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "text/event-stream", "User-Agent": "provider-benchmark-concurrency-probe/1.0"})
+        request = Request(endpoint.rstrip("/") + "/chat/completions", data=payload, headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "text/event-stream", "User-Agent": "benching-concurrency-probe/1.0"})
         with urlopen(request, timeout=120) as response:
             result["http_status"] = response.status
             result["retry_after"] = response.headers.get("retry-after")

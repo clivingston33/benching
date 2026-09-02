@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Single supported Terminal-Bench 2.1 runner for provider comparisons."""
+"""Run LLM-provider benchmark suites against terminal-agent task sets."""
 from __future__ import annotations
 
 import argparse
@@ -26,30 +26,85 @@ from benchmark.concurrency_probe import run_probe
 ROOT = Path(__file__).resolve().parents[1]
 os.environ["PATH"] = str(Path.home() / ".local/bin") + os.pathsep + os.environ.get("PATH", "")
 RUNS = ROOT / "runs"
-CONFIG = ROOT / "config" / "providers.yaml"
-TASKS = Path.home() / "terminal-bench-2-1" / "tasks"
-DEFAULT_BENCHMARK = "terminal-bench"
-DEFAULT_BENCHMARK_VERSION = "2.1"
-DEFAULT_MODEL = "deepseek-v4-flash-0731"
+CONFIG = ROOT / "config" / "benchmark.yaml"
 DEFAULT_CONCURRENCY = 3
 DEFAULT_TRIALS = 1
 PROXY_PORT = 8765
-TOKENIZER_REPO = "deepseek-ai/DeepSeek-V4-Flash-0731"
-TOKENIZER_REVISION = "7872f01b1d1fe23eabc4c98b48bffcef5a386062"
-TOKENIZER_CACHE = Path.home() / ".cache" / "provider-benchmark" / "deepseek-v4-flash-0731"
+CACHE_ROOT = Path.home() / ".cache" / "benching"
+
+
+@dataclass(frozen=True)
+class BenchmarkSpec:
+    name: str
+    version: str
+    model: str
+    reasoning: str
+    tasks_dir: Path
+    expected_task_count: int | None
+    smoke_tasks: tuple[str, ...]
+    agent: str
+    max_tokens: int
+    context_window: int
+    run_id_prefix: str
+    tokenizer_repo: str
+    tokenizer_revision: str
+    tokenizer_env_override: str | None
+    cache_dir: Path
+
+    @property
+    def display_name(self) -> str:
+        return f"{self.name} {self.version}".strip()
+
+
+def benchmark_spec(config: dict[str, Any]) -> BenchmarkSpec:
+    settings = config.get("benchmark") if isinstance(config.get("benchmark"), dict) else {}
+    tokenizer = settings.get("tokenizer") if isinstance(settings.get("tokenizer"), dict) else {}
+    tasks_dir = Path(str(settings.get("tasks_dir", "") or "")).expanduser()
+    if not tasks_dir.is_absolute():
+        tasks_dir = (ROOT / tasks_dir).resolve()
+    smoke = settings.get("smoke_tasks") or []
+    if isinstance(smoke, str):
+        smoke = [smoke]
+    smoke_tasks = tuple(str(item) for item in smoke if str(item).strip())
+    expected = settings.get("expected_task_count")
+    try:
+        expected_count = int(expected) if expected not in (None, "", 0) else None
+    except (TypeError, ValueError):
+        expected_count = None
+    tokenizer_repo = str(tokenizer.get("repo") or "").strip()
+    tokenizer_revision = str(tokenizer.get("revision") or "").strip()
+    if not tokenizer_repo or not tokenizer_revision:
+        raise SystemExit("config/benchmark.yaml: benchmark.tokenizer.repo and revision are required")
+    cache_dir = CACHE_ROOT / "tokenizers" / tokenizer_repo.replace("/", "--")
+    return BenchmarkSpec(
+        name=str(settings.get("name", "benchmark")).strip() or "benchmark",
+        version=str(settings.get("version", "")).strip(),
+        model=str(settings.get("model", "")).strip(),
+        reasoning=str(settings.get("reasoning", "default")).strip() or "default",
+        tasks_dir=tasks_dir,
+        expected_task_count=expected_count,
+        smoke_tasks=smoke_tasks,
+        agent=str(settings.get("agent", "agents.instrumented_omp_agent:InstrumentedOmpAgent")).strip(),
+        max_tokens=int(settings.get("max_tokens", 49152) or 49152),
+        context_window=int(settings.get("context_window", 262144) or 262144),
+        run_id_prefix=str(settings.get("run_id_prefix", "bench")).strip() or "bench",
+        tokenizer_repo=tokenizer_repo,
+        tokenizer_revision=tokenizer_revision,
+        tokenizer_env_override=str(tokenizer.get("env_override") or "").strip() or None,
+        cache_dir=cache_dir,
+    )
 
 
 @dataclass(frozen=True)
 class RunOptions:
     provider: str
     mode: str
-    benchmark: str = DEFAULT_BENCHMARK
-    benchmark_version: str = DEFAULT_BENCHMARK_VERSION
-    benchmark_model: str = DEFAULT_MODEL
+    benchmark_model: str | None = None
     reasoning: str = "default"
     concurrency: int = DEFAULT_CONCURRENCY
     trials: int = DEFAULT_TRIALS
     proxy_port: int = PROXY_PORT
+    benchmark: BenchmarkSpec | None = None
 
 
 
@@ -59,19 +114,9 @@ def load_yaml() -> dict[str, Any]:
     except ImportError as exc:
         raise SystemExit("PyYAML is required; install the project dependencies first") from exc
     value = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
-    if not isinstance(value, dict) or not isinstance(value.get("providers"), dict):
-        raise SystemExit("invalid providers.yaml")
+    if not isinstance(value, dict) or not isinstance(value.get("benchmark"), dict):
+        raise SystemExit("invalid config/benchmark.yaml")
     return value
-
-
-def benchmark_settings(config: dict[str, Any]) -> tuple[str, str, str, str]:
-    settings = config.get("benchmark") if isinstance(config.get("benchmark"), dict) else {}
-    return (
-        str(settings.get("name", DEFAULT_BENCHMARK)),
-        str(settings.get("version", DEFAULT_BENCHMARK_VERSION)),
-        str(settings.get("model", DEFAULT_MODEL)),
-        str(settings.get("reasoning", "default")),
-    )
 
 
 def parse_env(path: Path) -> dict[str, str]:
@@ -87,9 +132,15 @@ def parse_env(path: Path) -> dict[str, str]:
     return values
 
 
+def enabled_providers(root_config: dict[str, Any]) -> list[str]:
+    providers = root_config.get("providers") if isinstance(root_config.get("providers"), dict) else {}
+    return [name for name, cfg in providers.items() if isinstance(cfg, dict) and cfg.get("enabled")]
+
+
 def provider_config(name: str, root_config: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     config = root_config or load_yaml()
-    value = config["providers"].get(name)
+    providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
+    value = providers.get(name)
     if not isinstance(value, dict) or not value.get("enabled", False):
         raise SystemExit(f"provider is not enabled: {name}")
     return config, value
@@ -107,14 +158,18 @@ def resolve(name: str, config: dict[str, Any], values: dict[str, str] | None = N
     return endpoint.rstrip("/"), api_model
 
 
-def task_names(mode: str) -> list[str]:
+def task_names(mode: str, spec: BenchmarkSpec) -> list[str]:
     if mode == "smoke":
-        return ["break-filter-js-from-html", "cancel-async-tasks", "adaptive-rejection-sampler"]
+        if not spec.smoke_tasks:
+            raise SystemExit("smoke mode requires benchmark.smoke_tasks in config/benchmark.yaml")
+        return list(spec.smoke_tasks)
     if mode != "full":
         raise SystemExit(f"unsupported mode: {mode}")
-    tasks = sorted(path.name for path in TASKS.iterdir() if path.is_dir())
-    if len(tasks) != 89:
-        raise SystemExit(f"expected 89 Terminal-Bench 2.1 tasks, found {len(tasks)}")
+    if not spec.tasks_dir.is_dir():
+        raise SystemExit(f"tasks directory not found: {spec.tasks_dir}")
+    tasks = sorted(path.name for path in spec.tasks_dir.iterdir() if path.is_dir())
+    if spec.expected_task_count is not None and len(tasks) != spec.expected_task_count:
+        raise SystemExit(f"expected {spec.expected_task_count} tasks for {spec.display_name}, found {len(tasks)} in {spec.tasks_dir}")
     return tasks
 
 
@@ -133,36 +188,38 @@ def environment(config: dict[str, Any], values: dict[str, str] | None = None) ->
     return env
 
 
-def tokenizer_metadata(config: dict[str, Any], values: dict[str, str] | None = None) -> dict[str, Any]:
-    values = values if values is not None else parse_env(ROOT / str(config["env_file"]))
-    env_path = values.get("DEEPSEEK_V4_TOKENIZER")
-    local_cache = Path(env_path).expanduser() if env_path else TOKENIZER_CACHE
+def tokenizer_metadata(spec: BenchmarkSpec, values: dict[str, str] | None = None) -> dict[str, Any]:
+    values = values or {}
+    env_path = values.get(spec.tokenizer_env_override) if spec.tokenizer_env_override else None
+    local_cache = Path(env_path).expanduser() if env_path else spec.cache_dir
+    if not isinstance(local_cache, Path):
+        local_cache = spec.cache_dir
     available = (local_cache / "tokenizer.json").is_file() and (local_cache / "config.json").is_file() if local_cache.is_dir() else local_cache.is_file()
     return {
-        "repo": TOKENIZER_REPO,
-        "revision": TOKENIZER_REVISION,
+        "repo": spec.tokenizer_repo,
+        "revision": spec.tokenizer_revision,
         "source": "huggingface" if available else "unavailable",
         "local_cache": str(local_cache),
     }
 
 
-def ensure_tokenizer(config: dict[str, Any], values: dict[str, str] | None = None) -> dict[str, Any]:
-    metadata = tokenizer_metadata(config, values)
+def ensure_tokenizer(spec: BenchmarkSpec, values: dict[str, str] | None = None) -> dict[str, Any]:
+    metadata = tokenizer_metadata(spec, values)
     if metadata["source"] == "huggingface":
         return metadata
     try:
         from huggingface_hub import snapshot_download
         snapshot_download(
-            repo_id=TOKENIZER_REPO,
-            revision=TOKENIZER_REVISION,
+            repo_id=spec.tokenizer_repo,
+            revision=spec.tokenizer_revision,
             local_dir=metadata["local_cache"],
             allow_patterns=["tokenizer.json", "tokenizer_config.json", "config.json"],
         )
     except Exception as exc:
-        raise SystemExit(f"official tokenizer unavailable: {exc}") from exc
-    metadata = tokenizer_metadata(config, values)
+        raise SystemExit(f"tokenizer unavailable: {exc}") from exc
+    metadata = tokenizer_metadata(spec, values)
     if metadata["source"] != "huggingface":
-        raise SystemExit("official tokenizer download completed without tokenizer.json")
+        raise SystemExit("tokenizer download completed without tokenizer.json")
     return metadata
 
 
@@ -178,35 +235,34 @@ def fingerprint(run: dict[str, Any]) -> str:
 
 def run_directory(
     options: RunOptions,
+    spec: BenchmarkSpec,
     config: dict[str, Any],
     endpoint: str,
     api_model: str,
     tasks: list[str],
-    root_config: dict[str, Any] | None = None,
     env_values: dict[str, str] | None = None,
 ) -> Path:
     RUNS.mkdir(parents=True, exist_ok=True)
-    run_id = f"tb21-v1-{options.provider}-{options.mode}-{datetime.now(UTC):%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:8]}"
+    run_id = f"{spec.run_id_prefix}-v1-{options.provider}-{options.mode}-{datetime.now(UTC):%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:8]}"
     directory = RUNS / run_id
     directory.mkdir(parents=False)
     (directory / "harbor").mkdir()
-    benchmark_name, benchmark_version, benchmark_model, reasoning = benchmark_settings(root_config or load_yaml())
     run = {
         "schema_version": 1,
         "run_id": run_id,
         "created_at_utc": utc(),
-        "benchmark": benchmark_name,
-        "benchmark_version": benchmark_version,
-        "benchmark_model": benchmark_model,
+        "benchmark": spec.name,
+        "benchmark_version": spec.version,
+        "benchmark_model": options.benchmark_model or spec.model,
         "task_count": len(tasks),
         "tasks": tasks,
-        "agent": "agents.instrumented_omp_agent:InstrumentedOmpAgent",
+        "agent": spec.agent,
         "provider": options.provider,
         "provider_plan": config.get("plan"),
         "provider_plan_tier": config.get("plan_tier", "unknown"),
         "endpoint": endpoint,
         "api_model": api_model,
-        "reasoning_mode": reasoning,
+        "reasoning_mode": options.reasoning,
         "streaming": True,
         "concurrency": options.concurrency,
         "trials": options.trials,
@@ -220,11 +276,11 @@ def run_directory(
         "cpu": platform.processor(),
         "proxy_schema_version": 1,
         "proxy_port": options.proxy_port,
-        "tokenizer": tokenizer_metadata(config, env_values),
+        "tokenizer": tokenizer_metadata(spec, env_values),
     }
     run["environment_fingerprint"] = fingerprint(run)
     (directory / "run.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
-    routes = {options.provider: {"upstream": endpoint, "plan": config.get("plan"), "plan_tier": config.get("plan_tier", "unknown"), "reasoning": reasoning}}
+    routes = {options.provider: {"upstream": endpoint, "plan": config.get("plan"), "plan_tier": config.get("plan_tier", "unknown"), "reasoning": options.reasoning}}
     (directory / "proxy-routes.json").write_text(json.dumps(routes, indent=2) + "\n", encoding="utf-8")
     (directory / "status.json").write_text(json.dumps({"status": "created", "updated_at_utc": utc()}, indent=2) + "\n", encoding="utf-8")
     return directory
@@ -242,22 +298,22 @@ def version(name: str) -> str | None:
     return text[:256] or None
 
 
-def harbor_command(options: RunOptions, config: dict[str, Any], endpoint: str, api_model: str, benchmark_model: str, directory: Path, tasks: list[str]) -> list[str]:
+def harbor_command(options: RunOptions, spec: BenchmarkSpec, config: dict[str, Any], endpoint: str, api_model: str, directory: Path, tasks: list[str]) -> list[str]:
     command = [
-        executable("harbor"), "run", "--path", str(TASKS),
-        "--agent", "agents.instrumented_omp_agent:InstrumentedOmpAgent",
+        executable("harbor"), "run", "--path", str(spec.tasks_dir),
+        "--agent", spec.agent,
         "--model", f"{options.provider}/{api_model}",
         "--jobs-dir", str(directory / "harbor"), "--job-name", directory.name,
         "--n-attempts", str(options.trials), "--n-concurrent", str(options.concurrency),
         "--n-concurrent-agents", str(options.concurrency), "--max-retries", "0",
         "--agent-include-logs", "**/*",
-        "--mounts", json.dumps([{"type": "bind", "source": str(ROOT / "cache"), "target": "/opt/provider-benchmark", "read_only": True}]),
+        "--mounts", json.dumps([{"type": "bind", "source": str(ROOT / "cache"), "target": "/opt/omp-cache", "read_only": True}]),
         "--extra-docker-compose", str(directory / "docker-host-gateway.yaml"),
     ]
     agent_kwargs = {
         "provider": options.provider,
         "provider_plan": config.get("plan") or "",
-        "benchmark_model": benchmark_model,
+        "benchmark_model": options.benchmark_model or spec.model,
         "model": api_model,
         "upstream": endpoint,
         "api_key_env": config["auth_env"],
@@ -265,8 +321,8 @@ def harbor_command(options: RunOptions, config: dict[str, Any], endpoint: str, a
         "proxy_url": f"http://host.docker.internal:{options.proxy_port}",
         "api": config.get("api", "openai-completions"),
         "reasoning": options.reasoning,
-        "max_tokens": "49152",
-        "context_window": "262144",
+        "max_tokens": str(spec.max_tokens),
+        "context_window": str(spec.context_window),
     }
     for key, value in agent_kwargs.items():
         command.extend(["--agent-kwarg", f"{key}={value}"])
@@ -327,9 +383,9 @@ def parse_stream_body(body: bytes) -> tuple[bool, dict[str, Any] | None]:
 
 def validation_request(url: str, key: str, api_model: str) -> dict[str, Any]:
     payload = json.dumps({"model": api_model, "messages": [{"role": "user", "content": "Reply with OK."}], "max_tokens": 4, "stream": True}).encode()
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "text/event-stream", "User-Agent": "provider-benchmark/1.0"}
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "text/event-stream", "User-Agent": "benching/1.0"}
     started = time.monotonic()
-    result: dict[str, Any] = {"url": url, "api_model": api_model, "stream": True, "user_agent": "provider-benchmark/1.0", "streaming": False, "first_content": False, "usage": None}
+    result: dict[str, Any] = {"url": url, "api_model": api_model, "stream": True, "user_agent": "benching/1.0", "streaming": False, "first_content": False, "usage": None}
     try:
         with urlopen(Request(url, data=payload, headers=headers), timeout=90) as response:
             body = response.read()
@@ -363,6 +419,7 @@ def classify_validation(result: dict[str, Any]) -> str:
 
 def validate_provider(
     name: str,
+    spec: BenchmarkSpec,
     root_config: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
     env_values: dict[str, str] | None = None,
@@ -375,7 +432,7 @@ def validate_provider(
     key = env_values.get(str(config["auth_env"]))
     if not key:
         raise SystemExit(f"missing credential: {config['auth_env']}")
-    result: dict[str, Any] = {"schema_version": 1, "provider": name, "provider_plan": config.get("plan"), "benchmark_model": benchmark_settings(root_config)[2], "api_model": api_model, "base_url": endpoint, "models": None}
+    result: dict[str, Any] = {"schema_version": 1, "provider": name, "provider_plan": config.get("plan"), "benchmark_model": spec.model, "api_model": api_model, "base_url": endpoint, "models": None}
     if config.get("strict_model_check"):
         try:
             with urlopen(Request(endpoint + "/models", headers={"Authorization": f"Bearer {key}"}), timeout=30) as response:
@@ -410,24 +467,33 @@ def validate_provider(
     return output
 
 
+def _all_provider_env_values(root_config: dict[str, Any]) -> dict[str, str]:
+    merged: dict[str, str] = {}
+    for name in enabled_providers(root_config):
+        _, config = provider_config(name, root_config)
+        merged.update(parse_env(ROOT / str(config["env_file"])))
+    return merged
+
+
 def run_one(options: RunOptions, root_config: dict[str, Any] | None = None) -> Path:
     executable("docker")
     root_config, config = provider_config(options.provider, root_config)
+    spec = options.benchmark or benchmark_spec(root_config)
     values = parse_env(ROOT / str(config["env_file"]))
-    benchmark_name, benchmark_version, benchmark_model, reasoning = benchmark_settings(root_config)
-    if (options.benchmark, options.benchmark_version, options.benchmark_model) != (benchmark_name, benchmark_version, benchmark_model):
-        raise SystemExit("benchmark configuration does not match providers.yaml")
-    if options.reasoning != reasoning:
-        raise SystemExit("benchmark reasoning mode does not match providers.yaml")
+    model = options.benchmark_model or spec.model
+    if options.reasoning != spec.reasoning:
+        raise SystemExit(f"benchmark reasoning mode ({spec.reasoning}) does not match --reasoning {options.reasoning}")
+    if options.benchmark_model and spec.model and options.benchmark_model != spec.model:
+        raise SystemExit("--model does not match benchmark.model in config/benchmark.yaml")
     endpoint, api_model = resolve(options.provider, config, values)
-    tokenizer = tokenizer_metadata(config, values)
+    tokenizer = tokenizer_metadata(spec, values)
     if tokenizer["source"] != "huggingface":
-        raise SystemExit("official tokenizer is not cached; run benchmarkctl prepare-tokenizer")
-    validate_provider(options.provider, root_config, config, values)
-    tasks = task_names(options.mode)
-    directory = run_directory(options, config, endpoint, api_model, tasks, root_config, values)
+        raise SystemExit("tokenizer is not cached; run benchmarkctl prepare-tokenizer")
+    validate_provider(options.provider, spec, root_config, config, values)
+    tasks = task_names(options.mode, spec)
+    directory = run_directory(options, spec, config, endpoint, api_model, tasks, values)
     (directory / "docker-host-gateway.yaml").write_text("services:\n  main:\n    extra_hosts:\n      - host.docker.internal:host-gateway\n", encoding="utf-8")
-    command = harbor_command(options, config, endpoint, api_model, benchmark_model, directory, tasks)
+    command = harbor_command(options, spec, config, endpoint, api_model, directory, tasks)
     (directory / "command.json").write_text(json.dumps(command, indent=2) + "\n", encoding="utf-8")
     env = environment(config, values)
     proxy: subprocess.Popen[bytes] | None = None
@@ -450,11 +516,11 @@ def run_one(options: RunOptions, root_config: dict[str, Any] | None = None) -> P
     finally:
         stop_process(proxy)
 
-def probe_concurrency(name: str, root_config: dict[str, Any] | None = None, stages: tuple[int, ...] = (2, 3, 5, 6)) -> None:
+def probe_concurrency(name: str, spec: BenchmarkSpec, root_config: dict[str, Any] | None = None, stages: tuple[int, ...] = (2, 3, 5, 6)) -> None:
     root_config, config = provider_config(name, root_config)
     values = parse_env(ROOT / str(config["env_file"]))
     endpoint, api_model = resolve(name, config, values)
-    validate_provider(name, root_config, config, values)
+    validate_provider(name, spec, root_config, config, values)
     key = values.get(str(config["auth_env"]))
     if not key:
         raise SystemExit(f"missing credential: {config['auth_env']}")
@@ -462,8 +528,9 @@ def probe_concurrency(name: str, root_config: dict[str, Any] | None = None, stag
     print(json.dumps({"summary": str(summary_path), "requests": str(jsonl_path)}, indent=2))
 
 
-def compare(providers: list[str], mode: str, model: str, concurrency: int, trials: int, root_config: dict[str, Any] | None = None, execution: str = "sequential", reasoning: str = "default") -> None:
+def compare(providers: list[str], mode: str, model: str | None, concurrency: int, trials: int, root_config: dict[str, Any] | None = None, execution: str = "sequential", reasoning: str = "default") -> None:
     root_config = root_config or load_yaml()
+    spec = benchmark_spec(root_config)
     directories: list[Path] = []
     if execution == "parallel":
         import concurrent.futures
@@ -482,23 +549,23 @@ def compare(providers: list[str], mode: str, model: str, concurrency: int, trial
 
 def main() -> None:
     root_config = load_yaml()
-    providers = [name for name, cfg in root_config.get("providers", {}).items() if isinstance(cfg, dict) and cfg.get("enabled")]
-    if not providers:
-        raise SystemExit("no enabled providers in config/providers.yaml")
+    spec = benchmark_spec(root_config)
+    providers = enabled_providers(root_config)
+    default_model = spec.model
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers(dest="command", required=True)
-    default_reasoning = str((root_config.get("benchmark") or {}).get("reasoning", "default"))
+    default_reasoning = spec.reasoning
     for mode in ("smoke", "full"):
         command = commands.add_parser(mode)
-        command.add_argument("--provider", required=True, choices=providers)
-        command.add_argument("--model", default=DEFAULT_MODEL, dest="benchmark_model")
+        command.add_argument("--provider", required=True, choices=providers or None)
+        command.add_argument("--model", default=default_model, dest="benchmark_model")
         command.add_argument("--reasoning", choices=("default", "enabled", "disabled"), default=default_reasoning)
         command.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY)
         command.add_argument("--trials", type=int, default=DEFAULT_TRIALS)
     compare_parser = commands.add_parser("compare")
     compare_parser.add_argument("--providers", default=",".join(providers))
     compare_parser.add_argument("--mode", choices=("smoke", "full"), default="full")
-    compare_parser.add_argument("--model", default=DEFAULT_MODEL, dest="benchmark_model")
+    compare_parser.add_argument("--model", default=default_model, dest="benchmark_model")
     compare_parser.add_argument("--reasoning", choices=("default", "enabled", "disabled"), default=default_reasoning)
     compare_parser.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY)
     compare_parser.add_argument("--trials", type=int, default=DEFAULT_TRIALS)
@@ -506,12 +573,17 @@ def main() -> None:
     execution_group.add_argument("--execution", choices=("sequential", "parallel"), default="sequential", help="how provider benchmark runs are scheduled (default: sequential)")
     execution_group.add_argument("--parallel-providers", action="store_true", dest="parallel_alias", help="alias for --execution parallel (informal testing only)")
     validate = commands.add_parser("validate")
-    validate.add_argument("--provider", required=True, choices=providers)
+    validate.add_argument("--provider", required=True, choices=providers or None)
     probe_parser = commands.add_parser("probe-concurrency")
-    probe_parser.add_argument("--provider", required=True, choices=providers)
+    probe_parser.add_argument("--provider", required=True, choices=providers or None)
     probe_parser.add_argument("--stages", default="2,3,5,6", help="comma-separated concurrency levels to probe")
     commands.add_parser("prepare-tokenizer")
     args = parser.parse_args()
+    if args.command == "prepare-tokenizer":
+        print(json.dumps(ensure_tokenizer(spec, _all_provider_env_values(root_config)), indent=2))
+        return
+    if not providers:
+        raise SystemExit("no enabled providers; add a provider entry (with env_file and auth_env) to config/benchmark.yaml")
     if args.command in {"smoke", "full"}:
         run_one(RunOptions(provider=args.provider, mode=args.command, benchmark_model=args.benchmark_model, reasoning=args.reasoning, concurrency=args.concurrency, trials=args.trials), root_config)
     elif args.command == "compare":
@@ -524,13 +596,9 @@ def main() -> None:
         execution = "parallel" if getattr(args, "parallel_alias", False) else args.execution
         compare(requested, args.mode, args.benchmark_model, args.concurrency, args.trials, root_config, execution=execution, reasoning=args.reasoning)
     elif args.command == "probe-concurrency":
-        probe_concurrency(args.provider, root_config, stages=tuple(int(value.strip()) for value in args.stages.split(",") if value.strip()))
-    elif args.command == "prepare-tokenizer":
-        _, config = provider_config(providers[0], root_config)
-        values = parse_env(ROOT / str(config["env_file"]))
-        print(json.dumps(ensure_tokenizer(config, values), indent=2))
+        probe_concurrency(args.provider, spec, root_config, stages=tuple(int(value.strip()) for value in args.stages.split(",") if value.strip()))
     else:
-        validate_provider(args.provider, root_config)
+        validate_provider(args.provider, spec, root_config)
 
 if __name__ == "__main__":
     main()

@@ -1,59 +1,55 @@
-# Provider Benchmark
+# benching
 
-Reproducible Terminal-Bench 2.1 comparison of Kourier and ElectronHub Dev/Coding using OMP and the same canonical DeepSeek V4 Flash 0731 model.
+Generic LLM-provider benchmarking harness: run a terminal-agent task suite against one or more OpenAI-compatible providers behind a telemetry proxy, and compare latency, throughput, reliability, and task pass rates.
 
-## Quickstart
+Suite and provider identity live entirely in `config/benchmark.yaml`; nothing in the code is specific to any one benchmark or provider.
 
-The fastest first run — one provider, smoke mode:
+## Layout
 
-```bash
-python3 -m pip install -e .
-cp config/kourier.env.example config/kourier.env
-chmod 600 config/kourier.env
-# edit config/kourier.env: set KOURIER_API_KEY
-benchmarkctl prepare-tokenizer
-benchmarkctl smoke --provider kourier
+```text
+benchmark/benchmarkctl.py    CLI runner (smoke / full / validate / probe-concurrency / compare)
+benchmark/concurrency_probe.py  direct staged concurrency-capability probe
+proxy/telemetry_proxy.py     OpenAI-compatible streaming proxy; per-run JSONL telemetry
+analytics/analyze.py         normalize telemetry; build metrics.jsonl and comparison JSON
+agents/instrumented_omp_agent.py  Harbor agent driving OMP through the proxy
+config/benchmark.yaml        benchmark suite identity + provider registry
+config/provider.env.example  template for a provider credential file
 ```
 
-That validates credentials, runs 3 quick Terminal-Bench tasks, and produces a run under `runs/`. You only need one provider's key — skip the other provider entirely. The full 89-task run is `benchmarkctl full --provider kourier`; an apples-to-apples comparison is `benchmarkctl compare --providers kourier,electronhub` (runs sequentially by default).
+## Requirements
 
-## Fixed configuration
+- Python 3.12+, `docker`
+- `harbor` and `omp` (see the org's setup docs); `harbor` must be on `PATH` and `omp` available inside the Harbor task image
+- A provider serving an OpenAI-compatible streaming API
 
-- Benchmark: Terminal-Bench 2.1, 89 tasks
-- Agent: `agents.instrumented_omp_agent:InstrumentedOmpAgent`
-- Canonical model: `deepseek-v4-flash-0731`
-- Kourier API model: `DSV4-Flash-0731`
-- ElectronHub Dev API model: `deepseek-v4-flash-0731:dev`
-- Providers: `kourier`, `electronhub`
-- Streaming: required
-- Reasoning: `default` (no override injected; see below)
-- Concurrency: 3
-- Trials per task: 1
-- Harbor retries: 0
+## Configure a benchmark suite
 
-The canonical benchmark model identifies the model being compared. `api_model` is the provider-facing identifier and may differ by provider.
-Plan and entitlement metadata is recorded explicitly in `config/providers.yaml` (Kourier: plan `soft_launch`, routing entitlement `omega`; ElectronHub: plan `dev_coding`, tier `Coding Plan (DevPass)`); observed capacity is never used to infer a plan tier.
+`config/benchmark.yaml` declares everything suite-specific:
 
-Reasoning is an explicit mode — `default`, `enabled`, or `disabled` — set under `benchmark.reasoning` in `config/providers.yaml` and overridable per-run with `--reasoning`. `default` injects no override, so the provider/model behaves normally; `disabled` makes the proxy inject `reasoning.enabled=false`; `enabled` sets it true. The mode is recorded as `reasoning_mode` in `run.json`.
-
-## Setup
-
-Install the project and ensure `docker`, `harbor`, and `omp` are available:
-
-```bash
-python3 -m pip install -e .
-cp config/kourier.env.example config/kourier.env
-cp config/electronhub.env.example config/electronhub.env
-chmod 600 config/kourier.env config/electronhub.env
+```yaml
+benchmark:
+  name: my-suite
+  version: "1.0"
+  model: model-identifier            # canonical benchmark model
+  reasoning: default                 # default | enabled | disabled
+  tasks_dir: ~/my-suite/tasks        # one subdirectory per task
+  expected_task_count: 50            # full mode asserts this many tasks
+  smoke_tasks: [task-a, task-b]      # quick subset for smoke mode
+  agent: agents.instrumented_omp_agent:InstrumentedOmpAgent
+  max_tokens: 49152
+  context_window: 262144
+  run_id_prefix: my-suite
+  tokenizer:                         # pinned local-count tokenizer
+    repo: org/tokenizer
+    revision: <sha>
+    env_override: TOKENIZER_PATH     # optional local override var
 ```
 
-You only need a provider you intend to use. Copy the env file and set the API key for each provider you run; the others can be skipped. `harbor` and `omp` are internal CLI tools (see the org's setup docs); `harbor` must be on `PATH` and `omp` available inside the Harbor task image.
+Point `tasks_dir` at a directory whose subdirectories are tasks, set the canonical model and tokenizer, and the harness uses them everywhere (run metadata, validation, comparison compatibility).
 
-The analyzer uses the pinned official tokenizer repository `deepseek-ai/DeepSeek-V4-Flash-0731` at revision `7872f01b1d1fe23eabc4c98b48bffcef5a386062`. Prepare the cache once with `benchmarkctl prepare-tokenizer`; benchmark runs use `local_files_only=True` and never update it. `DEEPSEEK_V4_TOKENIZER` remains an optional local-cache override.
+## Configure providers
 
-## Adding a provider
-
-Add an entry to `config/providers.yaml` and a matching env file:
+Enable one or more providers under `providers:` in `config/benchmark.yaml`:
 
 ```yaml
 providers:
@@ -62,49 +58,64 @@ providers:
     env_file: config/myprovider.env
     auth_env: MYPROVIDER_API_KEY
     base_url: https://api.myprovider.com/v1
-    api_model: deepseek-v4-flash-0731
+    api_model: provider-specific-model-id
     api: openai-completions
     strict_model_check: false
     plan: null
     plan_tier: unknown
+    routing_entitlement: null
+    benchmark_concurrency_limit: null
 ```
+
+Create the matching credential file from the template:
 
 ```bash
-cp config/kourier.env.example config/myprovider.env
-# set MYPROVIDER_API_KEY in config/myprovider.env
+cp config/provider.env.example config/myprovider.env
+chmod 600 config/myprovider.env
+# set MYPROVIDER_API_KEY (and optionally MYPROVIDER_BASE_URL / MYPROVIDER_API_MODEL,
+# which override base_url / api_model)
 ```
 
-No code changes are needed; the provider is picked up automatically by `validate`, `smoke`, `full`, `probe-concurrency`, and `compare`. Set `strict_model_check: true` to require the `api_model` to appear in the provider's `/models` catalog during validation (ElectronHub does this).
+`<NAME>_BASE_URL` and `<NAME>_API_MODEL` in the env file override the YAML values; the YAML `auth_env` names the key the harness reads.
+
+No code changes are needed; enabled providers are picked up automatically by `validate`, `smoke`, `full`, `probe-concurrency`, and `compare`. Set `strict_model_check: true` to require `api_model` in the provider's `/models` catalog during validation.
+
+## Quickstart
+
+```bash
+python3 -m pip install -e .
+cp config/provider.env.example config/myprovider.env   # then fill in the key
+chmod 600 config/myprovider.env
+benchmarkctl prepare-tokenizer     # cache the pinned tokenizer once
+benchmarkctl smoke --provider myprovider
+```
+
+That validates credentials, runs the smoke tasks, and produces a run under `runs/`.
 
 ## Commands
 
 ```bash
 benchmarkctl prepare-tokenizer
-benchmarkctl validate --provider kourier
-benchmarkctl validate --provider electronhub
-benchmarkctl probe-concurrency --provider kourier
-benchmarkctl probe-concurrency --provider electronhub
-benchmarkctl smoke --provider electronhub
-benchmarkctl smoke --provider kourier
-benchmarkctl full --provider kourier
-benchmarkctl full --provider electronhub
-
-benchmarkctl compare --providers kourier,electronhub --concurrency 3
-benchmarkctl compare --providers kourier,electronhub --execution parallel --concurrency 3
+benchmarkctl validate --provider myprovider
+benchmarkctl probe-concurrency --provider myprovider
+benchmarkctl smoke --provider myprovider
+benchmarkctl full --provider myprovider
+benchmarkctl compare --providers myprovider,otherprovider --concurrency 3
+benchmarkctl compare --providers myprovider,otherprovider --execution parallel --concurrency 3
 ```
 
 Each command:
 
-- `prepare-tokenizer` — downloads the pinned official DeepSeek tokenizer (`tokenizer.json`, config, etc.) into the local cache once, if not already present. Benchmark runs need it cached for exact local token counting; runs use the cache read-only and never re-download.
-- `validate --provider <name>` — checks credentials and that the provider serves the configured model over streaming; the gatekeeper every run re-runs first.
-- `probe-concurrency --provider <name> [--stages 2,3,5,6]` — stages direct concurrent-stream requests (default `2,3,5,6`) to find the provider's concurrency ceiling, stopping at the first rejected stage; doesn't touch benchmark scores.
-- `smoke --provider <name>` — runs 3 quick Terminal-Bench tasks to confirm the full pipeline works.
-- `full --provider <name>` — runs all 89 tasks; the real benchmark.
-- `compare --providers <a>,<b> [--execution sequential|parallel]` — runs the given mode for one or more providers, then builds the comparison report. `sequential` (default) runs providers one at a time so they don't compete for host resources — the official, comparable mode; `parallel` runs them concurrently for informal/faster testing. Works with a single provider too. The comparison JSON records `provider_execution_mode` and sets `official_comparison: false` for parallel runs, so a host-contention run can't be mistaken for an official comparison. `--parallel-providers` remains as an alias for `--execution parallel`.
+- `prepare-tokenizer` — downloads the pinned tokenizer (`tokenizer.json`, config, etc.) into the local cache once, if not already present. Runs use the cache read-only and never re-download.
+- `validate --provider <name>` — checks credentials and that the provider serves the configured model over streaming; every run re-validates first.
+- `probe-concurrency --provider <name> [--stages 2,3,5,6]` — stages direct concurrent-stream requests to find the provider's concurrency ceiling, stopping at the first rejected stage; doesn't touch benchmark scores.
+- `smoke --provider <name>` — runs the configured smoke tasks to confirm the pipeline.
+- `full --provider <name>` — runs the full suite; the real benchmark.
+- `compare --providers <a>,<b> [--execution sequential|parallel]` — runs the given mode for each provider, then builds the comparison report. `sequential` (default) runs providers one at a time so they don't compete for host resources — the official, comparable mode. `parallel` runs them concurrently for informal/faster testing. The comparison JSON records `provider_execution_mode` and sets `official_comparison: false` for parallel runs, so a host-contention run can't be mistaken for an official comparison. `--parallel-providers` remains as an alias for `--execution parallel`.
 
-Validation is authoritative. Smoke and full runs refuse to start when provider preflight fails.
+Validation is authoritative; smoke and full runs refuse to start when provider preflight fails.
 
-The probe stages 2, 3, 5, and one optional 6-stream test, stopping at the first rejected stage. It uses direct provider streaming requests, records 429/`Retry-After`, and never affects Terminal-Bench scores. Plan tiers come from `config/providers.yaml`; observed capacity never infers a tier.
+Reasoning is an explicit mode — `default`, `enabled`, or `disabled`. `default` injects no override, so the provider/model behaves normally; `disabled` makes the proxy inject `reasoning.enabled=false`; `enabled` sets it true. The mode is recorded as `reasoning_mode` in `run.json`.
 
 ## Run artifacts
 
@@ -113,15 +124,13 @@ Each run is isolated under `runs/<run-id>/`:
 ```text
 run.json                 immutable run configuration and fingerprint
 status.json              lifecycle status
-command.json             exact Harbor command
+command.json             exact runner command
 proxy-routes.json        trusted upstream routing configuration
 raw.jsonl                proxy telemetry and captured debug data
 metrics.jsonl            normalized analytical records
-harbor/                  Harbor task artifacts
-*.log                    Harbor and proxy logs
+harbor/                  runner task artifacts
+*.log                    runner and proxy logs
 ```
-
-Historical artifacts outside `runs/` are intentionally preserved and are not included in comparisons.
 
 ## Metric definitions
 
@@ -134,16 +143,18 @@ Effective TPS = locally counted output tokens / end-to-end latency seconds
 CV = standard_deviation / mean
 ```
 
-Provider-reported usage is stored separately from locally calculated output tokens. Local tokenization uses `tokenizers.Tokenizer` directly against `<tokenizer-cache>/tokenizer.json` with the pinned official cache. If the exact tokenizer is unavailable or output capture is truncated, local-token metrics are explicitly unavailable.
-
-Cache metrics are never estimated. Missing provider cache fields remain unavailable.
+Provider-reported usage is stored separately from locally calculated output tokens. Local tokenization uses `tokenizers.Tokenizer` against the pinned tokenizer cache. If the exact tokenizer is unavailable or output capture is truncated, local-token metrics are explicitly unavailable. Cache metrics are never estimated; missing provider cache fields remain unavailable.
 
 ## Architecture
 
 ```text
-Terminal-Bench 2.1 -> Harbor -> OMP -> canonical proxy -> provider HTTPS API
-                                               |
-                                               +-> run-scoped raw.jsonl
+Task suite -> Harbor -> OMP -> telemetry proxy -> provider HTTPS API
+                                        |
+                                        +-> run-scoped raw.jsonl
 
 analytics/analyze.py -> metrics.jsonl and comparison JSON
 ```
+
+## Rebranding history
+
+This repository previously hardcoded a Terminal-Bench 2.1 comparison of the Kourier and ElectronHub providers and was renamed from `provider-benchmark`. It now ships as a generic harness (this branch, `standardize/generic-benchmark-harness`); a follow-up is planned to expose the same functionality as a unified CLI.

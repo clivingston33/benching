@@ -28,7 +28,7 @@ def test_staged_probe_stops_after_first_rejected_stage(tmp_path, monkeypatch) ->
         }
 
     monkeypatch.setattr(probe, "simultaneous", fake_stage)
-    summary_path, jsonl_path = probe.run_probe("electronhub", {"plan": "dev_coding", "plan_tier": "unknown"}, "https://example.test/v1", "deepseek-v4-flash-0731:dev", "secret", tmp_path)
+    summary_path, jsonl_path = probe.run_probe("acme", {"plan": "trial", "plan_tier": "unknown"}, "https://example.test/v1", "acme-model-1", "secret", tmp_path)
     summary = json.loads(summary_path.read_text())
     assert calls == [2, 3]
     assert summary["highest_verified_concurrency"] == 2
