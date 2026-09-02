@@ -38,14 +38,15 @@ export default function Home() {
         </p>
       </div>
 
-      <div className="comparison-layout">
-        <SideNav />
+      <RunSelectionProvider>
+        <div className="run-selector-row">
+          <RunSelector />
+        </div>
 
-        <div className="main-content">
-          <RunSelectionProvider>
-            <div className="run-selector-row">
-              <RunSelector />
-            </div>
+        <div className="comparison-layout">
+          <SideNav />
+
+          <div className="main-content">
             <section id="provider-comparison" className="content-section">
             <h2 className="comparison-title">
               <span className="sq" aria-hidden />
@@ -116,9 +117,9 @@ export default function Home() {
             </h2>
             <TaskResultsSection />
           </section>
-          </RunSelectionProvider>
+          </div>
         </div>
-      </div>
+      </RunSelectionProvider>
     </main>
   );
 }
