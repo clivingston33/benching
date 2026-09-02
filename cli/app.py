@@ -29,10 +29,18 @@ app = typer.Typer(
 
 def _register() -> None:
     from cli import config as config_group
+    from cli import doctor as doctor_group
     from cli import providers as providers_group
+    from cli import results as results_group
+    from cli import runs as runs_group
+    from cli import tokenizer as tokenizer_group
 
+    app.add_typer(doctor_group.app, name="doctor")
     app.add_typer(config_group.app, name="config")
     app.add_typer(providers_group.app, name="provider")
+    app.add_typer(runs_group.app, name="runs")
+    app.add_typer(results_group.app, name="results")
+    app.add_typer(tokenizer_group.app, name="tokenizer")
 
     from cli import compare as compare_group
     from cli import run as run_group
