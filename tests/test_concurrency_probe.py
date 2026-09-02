@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-import benchmark.concurrency_probe as probe
+import benchmark.concurrency as probe
 
 
 def test_parse_stream_detects_content_and_finish() -> None:

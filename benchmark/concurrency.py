@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+from benchmark._paths import RUNS
 from benchmark._util import stream_summary, utc
+from benchmark.config import BenchmarkSpec, provider_config, provider_env_values, resolve
+from benchmark.validation import validate_provider
 
 PROMPT = "Reply with a short numbered list of 120 simple words."
 MAX_TOKENS = 256
@@ -156,3 +160,23 @@ def run_probe(provider: str, config: dict[str, Any], endpoint: str, api_model: s
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     jsonl_path.write_text("".join(json.dumps(request, separators=(",", ":")) + "\n" for stage in tested for request in stage["requests"]), encoding="utf-8")
     return summary_path, jsonl_path
+
+
+def probe_provider(
+    name: str,
+    spec: BenchmarkSpec,
+    root_config: dict[str, Any] | None = None,
+    stages: tuple[int, ...] = (2, 3, 5, 6),
+    output_dir: Path = RUNS,
+) -> tuple[Path, Path]:
+    """Validate a provider then stage concurrent streams against it."""
+    root_config, config = provider_config(name, root_config)
+    values = provider_env_values(name, config)
+    endpoint, api_model = resolve(name, config, values)
+    result = validate_provider(name, spec, root_config, config, values)
+    if not result["success"]:
+        raise SystemExit(f"provider validation failed: {result['error_class']}")
+    key = values.get(str(config["auth_env"]))
+    if not key:
+        raise SystemExit(f"missing credential: {config['auth_env']}")
+    return run_probe(name, config, endpoint, api_model, key, output_dir, stages)

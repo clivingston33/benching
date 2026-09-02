@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from benchmark.benchmarkctl import BenchmarkSpec, RunOptions, benchmark_spec, classify_validation, harbor_command, load_yaml, parse_stream_body, resolve
+from benchmark.config import BenchmarkSpec, benchmark_spec, load_yaml, resolve
+from benchmark.runner import RunOptions, harbor_command
+from benchmark.validation import classify_validation, parse_stream_body
 
 
 def make_spec(**overrides) -> BenchmarkSpec:
@@ -53,9 +55,9 @@ def test_config_ships_with_no_enabled_providers() -> None:
 
 
 def test_harbor_command_preserves_agent_kwargs(tmp_path, monkeypatch) -> None:
-    import benchmark.benchmarkctl as ctl
+    import benchmark.runner as runner
 
-    monkeypatch.setattr(ctl, "executable", lambda name: name)
+    monkeypatch.setattr(runner, "executable", lambda name: name)
     spec = make_spec(expected_task_count=None)
     command = harbor_command(
         RunOptions("acme", "smoke"),
