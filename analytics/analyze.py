@@ -285,19 +285,21 @@ def compatible(runs: list[dict[str, Any]]) -> None:
     if len({tokenizer_identity(run) for run in runs}) != 1:
         raise SystemExit("incompatible runs: tokenizer identity")
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("runs", nargs="+", type=Path)
-    parser.add_argument("--execution", choices=("sequential", "parallel"), default="sequential", help="how provider runs were scheduled")
-    parser.add_argument("--tokenizer", default=None, help="Exact tokenizer JSON path (overrides per-run tokenizer)")
-    args = parser.parse_args()
-    run_data = [read_json(path / "run.json") for path in args.runs]
+def normalize_runs(run_paths: list[Path], execution: str = "sequential", write_comparison: bool = True, tokenizer_override: str | None = None) -> dict[str, Any]:
+    """Normalize run telemetry into per-run metrics.jsonl.
+
+    With multiple runs, enforces compatibility between them. Returns the
+    comparison dict. ``write_comparison`` controls whether a
+    runs/comparison-*.json artifact is written (the compare command and
+    analyze CLI write one; a single-run results view does not).
+    """
+    run_data = [read_json(path / "run.json") for path in run_paths]
     if len(run_data) > 1:
         compatible(run_data)
-    tokenizer_path = args.tokenizer or next((tokenizer_path_from_run(run) for run in run_data if tokenizer_path_from_run(run)), None)
+    tokenizer_path = tokenizer_override or next((tokenizer_path_from_run(run) for run in run_data if tokenizer_path_from_run(run)), None)
     tokenizer = local_tokenizer(tokenizer_path)
     summaries = []
-    for run_dir, run in zip(args.runs, run_data):
+    for run_dir, run in zip(run_paths, run_data):
         raw = read_jsonl(run_dir / "raw.jsonl")
         normalized = normalize(run, raw, tokenizer)
         write_jsonl(run_dir / "metrics.jsonl", normalized)
@@ -308,8 +310,8 @@ def main() -> None:
         "created_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "benchmark": benchmark_label,
         "benchmark_model": run_data[0].get("benchmark_model"),
-        "provider_execution_mode": args.execution,
-        "official_comparison": args.execution == "sequential",
+        "provider_execution_mode": execution,
+        "official_comparison": execution == "sequential",
         "tokenizer": run_data[0].get("tokenizer") or {"repo": None, "revision": None, "local_cache": tokenizer_path, "source": "unavailable"},
         "formulas": {
             "ttft_ms": "first_content_output - request_started",
@@ -321,8 +323,19 @@ def main() -> None:
         },
         "runs": summaries,
     }
-    output = ROOT / "runs" / f"comparison-{datetime.now(UTC):%Y%m%d-%H%M%S}.json"
-    output.write_text(json.dumps(comparison, indent=2) + "\n", encoding="utf-8")
+    if write_comparison:
+        output = ROOT / "runs" / f"comparison-{datetime.now(UTC):%Y%m%d-%H%M%S}.json"
+        output.write_text(json.dumps(comparison, indent=2) + "\n", encoding="utf-8")
+    return comparison
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("runs", nargs="+", type=Path)
+    parser.add_argument("--execution", choices=("sequential", "parallel"), default="sequential", help="how provider runs were scheduled")
+    parser.add_argument("--tokenizer", default=None, help="Exact tokenizer JSON path (overrides per-run tokenizer)")
+    args = parser.parse_args()
+    comparison = normalize_runs(args.runs, execution=args.execution, write_comparison=True, tokenizer_override=args.tokenizer)
     print(json.dumps(comparison, indent=2))
 
 
