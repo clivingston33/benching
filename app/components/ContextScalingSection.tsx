@@ -11,23 +11,23 @@ import { YAxis } from "@/dither-kit/YAxis";
 import { Tooltip } from "@/dither-kit/Tooltip";
 import { Legend } from "@/dither-kit/Legend";
 import {
-  contextOutputPoints,
-  contextTtftPoints,
-  contextFailurePoints,
+  contextOutputPointsFor,
+  contextTtftPointsFor,
+  contextFailurePointsFor,
   providerConfig,
-  APPLES_TO_APPLES,
 } from "@/lib/benchmark-data";
+import { useRunSelection } from "@/lib/run-selection";
 
 type Tab = "speed" | "ttft" | "failure";
-
-const outputPoints = contextOutputPoints;
-const ttftPoints = contextTtftPoints;
-const failurePoints = contextFailurePoints;
 
 const contextConfig = providerConfig;
 
 export default function ContextScalingSection() {
+  const { selection, label } = useRunSelection();
   const [tab, setTab] = useState<Tab>("speed");
+  const outputPoints = contextOutputPointsFor(selection);
+  const ttftPoints = contextTtftPointsFor(selection);
+  const failurePoints = contextFailurePointsFor(selection);
 
   return (
     <div className="benchmarks-card">
@@ -51,7 +51,7 @@ export default function ContextScalingSection() {
           <span className="bench-arrow">↗</span>
         </h3>
         <p className="bench-desc">
-          ElectronHub full run — buckets by reported input tokens ·{" "}
+          Buckets by reported input tokens · {label} ·{" "}
           {tab === "failure" ? "Lower is better." : tab === "ttft" ? "TTFT — Lower is better." : "Higher is better."}
         </p>
       </div>
@@ -96,7 +96,7 @@ export default function ContextScalingSection() {
       </div>
 
       <div className="bench-foot">
-        {tab === "failure" || tab === "ttft" ? "Lower is better" : "Higher is better"} · {APPLES_TO_APPLES}
+        {tab === "failure" || tab === "ttft" ? "Lower is better" : "Higher is better"} · {label}
       </div>
     </div>
   );

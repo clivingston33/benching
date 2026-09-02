@@ -1,4 +1,6 @@
 import SideNav from "./components/SideNav";
+import RunSelector from "./components/RunSelector";
+import ProviderComparisonSection from "./components/ProviderComparisonSection";
 import SpeedSection from "./components/SpeedSection";
 import LatencySection from "./components/LatencySection";
 import ReliabilitySection from "./components/ReliabilitySection";
@@ -7,7 +9,7 @@ import ContextScalingSection from "./components/ContextScalingSection";
 import RunHistorySection from "./components/RunHistorySection";
 import BenchmarksSection from "./components/BenchmarksSection";
 import TaskResultsSection from "./components/TaskResultsSection";
-import { comparisonRows, APPLES_TO_APPLES, providers, MODELS } from "@/lib/benchmark-data";
+import { RunSelectionProvider } from "@/lib/run-selection";
 
 function Section({ id, title, children }: { id: string; title: string; children?: React.ReactNode }) {
   return (
@@ -40,44 +42,16 @@ export default function Home() {
         <SideNav />
 
         <div className="main-content">
-          <section id="provider-comparison" className="content-section">
+          <RunSelectionProvider>
+            <div className="run-selector-row">
+              <RunSelector />
+            </div>
+            <section id="provider-comparison" className="content-section">
             <h2 className="comparison-title">
               <span className="sq" aria-hidden />
               Provider Comparison
             </h2>
-            <div className="table-wrap">
-              <table className="comp-table">
-                <thead>
-                  <tr>
-                    <th className="th-metric" />
-                    <th className="th-provider th-kourier">
-                      <span className="provider-label">Kourier</span>
-                      <span className="provider-model">{MODELS.kourier}</span>
-                    </th>
-                    <th className="th-provider th-electron">
-                      <span className="provider-label">ElectronHub</span>
-                      <span className="provider-model">{MODELS.electronhub}</span>
-                    </th>
-                    <th className="th-note" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {comparisonRows.map((r) => (
-                    <tr key={r.metric}>
-                      <td className="td-metric">{r.metric}</td>
-                      <td className="td-val">{r.kourier}</td>
-                      <td className="td-val">{r.electron}</td>
-                      <td className="td-note">{r.note}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="data-note">
-              {APPLES_TO_APPLES} Request counts: Kourier {providers.kourier.requests.toLocaleString()}, ElectronHub{" "}
-              {providers.electronhub.requests.toLocaleString()} (89 tasks each). Task pass rate: {providers.kourier.tasks_passed}/
-              {providers.kourier.tasks_total} vs {providers.electronhub.tasks_passed}/{providers.electronhub.tasks_total}.
-            </p>
+            <ProviderComparisonSection />
           </section>
           <section id="benchmarks" className="content-section">
             <h2 className="comparison-title">
@@ -142,6 +116,7 @@ export default function Home() {
             </h2>
             <TaskResultsSection />
           </section>
+          </RunSelectionProvider>
         </div>
       </div>
     </main>

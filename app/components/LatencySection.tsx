@@ -15,19 +15,22 @@ import { YAxis } from "@/dither-kit/YAxis";
 import { Tooltip } from "@/dither-kit/Tooltip";
 import { Legend } from "@/dither-kit/Legend";
 import {
-  ttftRows,
-  responseRows,
-  latencyContextPoints,
+  ttftRowsFor,
+  responseRowsFor,
+  latencyContextPointsFor,
   providerConfig,
-  APPLES_TO_APPLES,
 } from "@/lib/benchmark-data";
+import { useRunSelection } from "@/lib/run-selection";
 type Tab = "ttft" | "response" | "context";
 
-const contextPoints = latencyContextPoints;
 const latencyConfig = providerConfig;
 
 export default function LatencySection() {
+  const { selection, label } = useRunSelection();
   const [tab, setTab] = useState<Tab>("ttft");
+  const ttftRows = ttftRowsFor(selection);
+  const responseRows = responseRowsFor(selection);
+  const contextPoints = latencyContextPointsFor(selection);
 
   return (
     <div className="benchmarks-card">
@@ -54,6 +57,8 @@ export default function LatencySection() {
           {tab === "context"
             ? "Median TTFT vs input context length — Lower is better."
             : "Median values — Lower is better."}
+          {" · "}
+          {label}
         </p>
       </div>
       <div className="chart-wrap" style={{ height: tab === "context" ? 360 : 340 }}>
@@ -86,18 +91,18 @@ export default function LatencySection() {
         {tab === "context" && (
           <LineChart data={contextPoints} config={latencyConfig} className="h-full w-full" margins={{ top: 32, right: 12, bottom: 22, left: 52 }}>
             <Grid horizontal />
-            <XAxis dataKey="ctx" />
+            <XAxis dataKey="label" />
             <YAxis tickCount={5} />
             <Crosshair />
             <Line dataKey="kourier"><ActiveDot /></Line>
             <Line dataKey="electronhub"><ActiveDot /></Line>
             <Legend align="right" />
-            <Tooltip labelKey="ctx" valueFormatter={(v) => `${v} ms`} />
+            <Tooltip labelKey="label" valueFormatter={(v) => `${v} ms`} />
           </LineChart>
         )}
       </div>
 
-      <div className="bench-foot">Lower is better · {APPLES_TO_APPLES}</div>
+      <div className="bench-foot">Lower is better · {label}</div>
     </div>
   );
 }

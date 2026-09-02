@@ -10,11 +10,16 @@ import { YAxis } from "@/dither-kit/YAxis";
 import { Tooltip } from "@/dither-kit/Tooltip";
 import { Legend } from "@/dither-kit/Legend";
 
-import { benchmarkRows, providerConfig, providers, APPLES_TO_APPLES } from "@/lib/benchmark-data";
+import { benchmarkRowsFor, avgProvider, providerConfig } from "@/lib/benchmark-data";
+import { useRunSelection } from "@/lib/run-selection";
 
 const terminalConfig = providerConfig;
 
 export default function BenchmarksSection() {
+  const { selection, label } = useRunSelection();
+  const rows = benchmarkRowsFor(selection);
+  const k = avgProvider(selection, "kourier");
+  const e = avgProvider(selection, "electronhub");
   return (
     <div className="benchmarks-card">
       <div className="benchmarks-tabs">
@@ -26,13 +31,13 @@ export default function BenchmarksSection() {
           Terminal Bench 2.1 <span className="bench-arrow">↗</span>
         </h3>
         <p className="bench-desc">
-          Task success rate (verifier reward = 1.0) · Higher is better · {providers.kourier.tasks_passed}/
-          {providers.kourier.tasks_total} vs {providers.electronhub.tasks_passed}/{providers.electronhub.tasks_total} tasks
+          Task success rate (verifier reward = 1.0) · Higher is better · {k?.tasks_passed}/{k?.tasks_total} vs{" "}
+          {e?.tasks_passed}/{e?.tasks_total} tasks · {label}
         </p>
       </div>
 
       <div className="chart-wrap" style={{ height: 340 }}>
-        <BarChart data={benchmarkRows} config={terminalConfig} className="h-full w-full" margins={{ top: 52, right: 12, bottom: 36, left: 40 }}>
+        <BarChart data={rows} config={terminalConfig} className="h-full w-full" margins={{ top: 52, right: 12, bottom: 36, left: 40 }}>
           <Grid horizontal />
           <XAxis dataKey="bench" />
           <YAxis tickCount={5} />
@@ -44,7 +49,7 @@ export default function BenchmarksSection() {
           <Tooltip labelKey="bench" valueFormatter={(v) => `${v}`} />
         </BarChart>
       </div>
-      <div className="bench-foot">Terminal Bench 2.1 — Higher is better · {APPLES_TO_APPLES}</div>
+      <div className="bench-foot">Terminal Bench 2.1 — Higher is better · {label}</div>
     </div>
   );
 }

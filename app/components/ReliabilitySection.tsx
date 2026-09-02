@@ -11,14 +11,19 @@ import { XAxis } from "@/dither-kit/XAxis";
 import { YAxis } from "@/dither-kit/YAxis";
 import { Tooltip } from "@/dither-kit/Tooltip";
 import { Legend } from "@/dither-kit/Legend";
-import { successRows, timeoutRows, breakdownRows, breakdownConfig, providerConfig, APPLES_TO_APPLES } from "@/lib/benchmark-data";
+import { successRowsFor, timeoutRowsFor, breakdownRowsFor, breakdownConfig, providerConfig } from "@/lib/benchmark-data";
+import { useRunSelection } from "@/lib/run-selection";
 
 type Tab = "success" | "timeout" | "breakdown";
 
 const reliabilityConfig = providerConfig;
 
 export default function ReliabilitySection() {
+  const { selection, label } = useRunSelection();
   const [tab, setTab] = useState<Tab>("success");
+  const successRows = successRowsFor(selection);
+  const timeoutRows = timeoutRowsFor(selection);
+  const breakdownRows = breakdownRowsFor(selection);
   return (
     <div className="benchmarks-card">
       <div className="benchmarks-tabs">
@@ -42,6 +47,8 @@ export default function ReliabilitySection() {
         </h3>
         <p className="bench-desc">
           {tab === "success" ? "HTTP 200 share of all requests — Higher is better." : "Lower is better."}
+          {" · "}
+          {label}
         </p>
       </div>
       <div className="chart-wrap" style={{ height: tab === "breakdown" ? 360 : 340 }}>
@@ -89,7 +96,7 @@ export default function ReliabilitySection() {
       </div>
 
       <div className="bench-foot">
-        {tab === "success" ? "Higher is better" : "Lower is better"} · {APPLES_TO_APPLES}
+        {tab === "success" ? "Higher is better" : "Lower is better"} · {label}
       </div>
     </div>
   );

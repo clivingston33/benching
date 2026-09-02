@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { ALL_TASKS, fmtDuration, APPLES_TO_APPLES } from "@/lib/benchmark-data";
+import { taskRowsFor, taskResultsFor, fmtDuration } from "@/lib/benchmark-data";
 import type { TaskRow } from "@/lib/benchmark-data";
+import { useRunSelection } from "@/lib/run-selection";
 
 type Filter = "different" | "all" | "bothPassed" | "bothFailed";
 
@@ -11,10 +12,13 @@ const PAGE_SIZE = 15;
 const fmtK = (v: number | null) => (v == null ? "n/a" : `${Math.round(v / 1000)}K`);
 
 export default function TaskResultsSection() {
+  const { selection, label } = useRunSelection();
   const [filter, setFilter] = useState<Filter>("different");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  const ALL_TASKS = useMemo<TaskRow[]>(() => taskRowsFor(taskResultsFor(selection)), [selection]);
 
   const filtered = useMemo(() => {
     let t = ALL_TASKS;
@@ -26,7 +30,7 @@ export default function TaskResultsSection() {
       t = t.filter(x => x.task.toLowerCase().includes(q));
     }
     return t;
-  }, [filter, search]);
+  }, [filter, search, ALL_TASKS]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const curPage = Math.min(page, totalPages);
@@ -43,7 +47,7 @@ export default function TaskResultsSection() {
     <div className="benchmarks-card">
       <div className="benchmarks-header" style={{ borderBottom: "none", marginBottom: 0, paddingBottom: 0 }}>
         <h3 className="bench-title">Task Results <span className="bench-arrow">↗</span></h3>
-        <p className="bench-desc">Terminal-Bench 2.1 — {ALL_TASKS.length} tasks with results from both providers · Click a row for details</p>
+        <p className="bench-desc">Terminal-Bench 2.1 — {ALL_TASKS.length} tasks with results from both providers · {label} · Click a row for details</p>
       </div>
 
       <div className="tr-controls">
@@ -155,7 +159,7 @@ export default function TaskResultsSection() {
         </div>
       </div>
 
-      <div className="bench-foot" style={{ marginTop: 12 }}>{APPLES_TO_APPLES}</div>
+      <div className="bench-foot" style={{ marginTop: 12 }}>{label}</div>
     </div>
   );
 }
