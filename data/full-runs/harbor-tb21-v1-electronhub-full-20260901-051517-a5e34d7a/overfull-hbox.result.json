@@ -1,0 +1,138 @@
+{
+    "id": "ed553056-ad86-4fe4-92de-bb6ec1483a1a",
+    "task_name": "terminal-bench/overfull-hbox",
+    "trial_name": "overfull-hbox__K8cvhRM",
+    "trial_uri": "file:///home/caleb/provider-benchmark/runs/tb21-v1-electronhub-full-20260901-051517-a5e34d7a/harbor/tb21-v1-electronhub-full-20260901-051517-a5e34d7a/overfull-hbox__K8cvhRM",
+    "task_id": {
+        "path": "/home/caleb/terminal-bench-2-1/tasks/overfull-hbox"
+    },
+    "source": "tasks",
+    "task_checksum": "e129822df8bf0b99903093294ed361f1af5487f61406092778195eb099c13aab",
+    "config": {
+        "task": {
+            "path": "/home/caleb/terminal-bench-2-1/tasks/overfull-hbox",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "tasks"
+        },
+        "trial_name": "overfull-hbox__K8cvhRM",
+        "trials_dir": "/home/caleb/provider-benchmark/runs/tb21-v1-electronhub-full-20260901-051517-a5e34d7a/harbor/tb21-v1-electronhub-full-20260901-051517-a5e34d7a",
+        "install_only": false,
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": null,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": "agents.instrumented_omp_agent:InstrumentedOmpAgent",
+            "import_path": null,
+            "model_name": "electronhub/deepseek-v4-flash-0731:dev",
+            "n_concurrent": 3,
+            "concurrency_group": null,
+            "skills": [],
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "resume_trajectory": false,
+            "load_trajectory": null,
+            "extra_allowed_hosts": [],
+            "include_logs": [
+                "**/*"
+            ],
+            "kwargs": {
+                "provider": "electronhub",
+                "provider_plan": "dev_coding",
+                "benchmark_model": "deepseek-v4-flash-0731",
+                "model": "deepseek-v4-flash-0731:dev",
+                "upstream": "https://api.electronhub.ai/v1",
+                "api_key_env": "ELECTRONHUB_API_KEY",
+                "run_id": "tb21-v1-electronhub-full-20260901-051517-a5e34d7a",
+                "proxy_url": "http://host.docker.internal:8765",
+                "api": "openai-completions",
+                "reasoning": "default",
+                "max_tokens": 49152,
+                "context_window": 262144
+            },
+            "mcp_servers": []
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "cpu_enforcement_policy": "auto",
+            "memory_enforcement_policy": "auto",
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "override_tpu": null,
+            "mounts": [
+                {
+                    "type": "bind",
+                    "source": "/home/caleb/provider-benchmark/cache",
+                    "target": "/opt/provider-benchmark",
+                    "read_only": true
+                }
+            ],
+            "extra_docker_compose": [
+                "/home/caleb/provider-benchmark/runs/tb21-v1-electronhub-full-20260901-051517-a5e34d7a/docker-host-gateway.yaml"
+            ],
+            "kwargs": {},
+            "extra_allowed_hosts": []
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "disable": false
+        },
+        "artifacts": [],
+        "extra_instruction_paths": [],
+        "job_id": "518c73c8-2363-45f4-8dad-885f7b17669d"
+    },
+    "agent_info": {
+        "name": "instrumented-omp",
+        "version": "omp/17.1.3",
+        "model_info": {
+            "name": "deepseek-v4-flash-0731:dev",
+            "provider": "electronhub"
+        }
+    },
+    "agent_result": {
+        "n_input_tokens": 299850,
+        "n_cache_tokens": 286336,
+        "n_output_tokens": 36072,
+        "cost_usd": null,
+        "rollout_details": null,
+        "metadata": null
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.0
+        }
+    },
+    "exception_info": null,
+    "started_at": "2026-09-01T08:22:33.941581Z",
+    "finished_at": "2026-09-01T08:31:26.004420Z",
+    "environment_setup": {
+        "started_at": "2026-09-01T08:22:33.943144Z",
+        "finished_at": "2026-09-01T08:22:35.560294Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-09-01T08:22:35.560324Z",
+        "finished_at": "2026-09-01T08:22:38.440475Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-09-01T08:22:38.440704Z",
+        "finished_at": "2026-09-01T08:29:51.369665Z"
+    },
+    "verifier": {
+        "started_at": "2026-09-01T08:29:51.845880Z",
+        "finished_at": "2026-09-01T08:31:13.908612Z"
+    },
+    "step_results": null
+}

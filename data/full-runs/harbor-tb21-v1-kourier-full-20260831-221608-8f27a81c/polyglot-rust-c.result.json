@@ -1,0 +1,138 @@
+{
+    "id": "dd9dbb77-9116-4e98-9a62-7ab926fcce2b",
+    "task_name": "terminal-bench/polyglot-rust-c",
+    "trial_name": "polyglot-rust-c__7HJSMsZ",
+    "trial_uri": "file:///home/caleb/provider-benchmark/runs/tb21-v1-kourier-full-20260831-221608-8f27a81c/harbor/tb21-v1-kourier-full-20260831-221608-8f27a81c/polyglot-rust-c__7HJSMsZ",
+    "task_id": {
+        "path": "/home/caleb/terminal-bench-2-1/tasks/polyglot-rust-c"
+    },
+    "source": "tasks",
+    "task_checksum": "2ec1024255a4d6e8758b527113c360d71163a7bdc13e39fb28316e4957344177",
+    "config": {
+        "task": {
+            "path": "/home/caleb/terminal-bench-2-1/tasks/polyglot-rust-c",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "tasks"
+        },
+        "trial_name": "polyglot-rust-c__7HJSMsZ",
+        "trials_dir": "/home/caleb/provider-benchmark/runs/tb21-v1-kourier-full-20260831-221608-8f27a81c/harbor/tb21-v1-kourier-full-20260831-221608-8f27a81c",
+        "install_only": false,
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": null,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": "agents.instrumented_omp_agent:InstrumentedOmpAgent",
+            "import_path": null,
+            "model_name": "kourier/DSV4-Flash-0731",
+            "n_concurrent": 3,
+            "concurrency_group": null,
+            "skills": [],
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "resume_trajectory": false,
+            "load_trajectory": null,
+            "extra_allowed_hosts": [],
+            "include_logs": [
+                "**/*"
+            ],
+            "kwargs": {
+                "provider": "kourier",
+                "provider_plan": "soft_launch",
+                "benchmark_model": "deepseek-v4-flash-0731",
+                "model": "DSV4-Flash-0731",
+                "upstream": "https://api.kourier.sh/v1",
+                "api_key_env": "KOURIER_API_KEY",
+                "run_id": "tb21-v1-kourier-full-20260831-221608-8f27a81c",
+                "proxy_url": "http://host.docker.internal:8765",
+                "api": "openai-completions",
+                "reasoning": "default",
+                "max_tokens": 49152,
+                "context_window": 262144
+            },
+            "mcp_servers": []
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "cpu_enforcement_policy": "auto",
+            "memory_enforcement_policy": "auto",
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "override_tpu": null,
+            "mounts": [
+                {
+                    "type": "bind",
+                    "source": "/home/caleb/provider-benchmark/cache",
+                    "target": "/opt/provider-benchmark",
+                    "read_only": true
+                }
+            ],
+            "extra_docker_compose": [
+                "/home/caleb/provider-benchmark/runs/tb21-v1-kourier-full-20260831-221608-8f27a81c/docker-host-gateway.yaml"
+            ],
+            "kwargs": {},
+            "extra_allowed_hosts": []
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "disable": false
+        },
+        "artifacts": [],
+        "extra_instruction_paths": [],
+        "job_id": "f992b9fa-da77-4dc7-bd48-d14e494f6b09"
+    },
+    "agent_info": {
+        "name": "instrumented-omp",
+        "version": "omp/17.1.3",
+        "model_info": {
+            "name": "DSV4-Flash-0731",
+            "provider": "kourier"
+        }
+    },
+    "agent_result": {
+        "n_input_tokens": 737827,
+        "n_cache_tokens": 718080,
+        "n_output_tokens": 17540,
+        "cost_usd": null,
+        "rollout_details": null,
+        "metadata": null
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 1.0
+        }
+    },
+    "exception_info": null,
+    "started_at": "2026-09-01T03:49:47.107025Z",
+    "finished_at": "2026-09-01T03:55:51.130274Z",
+    "environment_setup": {
+        "started_at": "2026-09-01T03:49:47.108353Z",
+        "finished_at": "2026-09-01T03:50:08.698104Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-09-01T03:50:08.698145Z",
+        "finished_at": "2026-09-01T03:50:12.605619Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-09-01T03:50:12.606015Z",
+        "finished_at": "2026-09-01T03:54:59.078227Z"
+    },
+    "verifier": {
+        "started_at": "2026-09-01T03:54:59.488193Z",
+        "finished_at": "2026-09-01T03:55:32.577899Z"
+    },
+    "step_results": null
+}
