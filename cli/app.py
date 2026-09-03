@@ -43,10 +43,12 @@ def _register() -> None:
     app.add_typer(tokenizer_group.app, name="tokenizer")
 
     from cli import compare as compare_group
+    from cli import demo as demo_group
     from cli import run as run_group
 
     app.command()(run_group.run)
     app.command()(compare_group.compare)
+    app.command(name="demo")(demo_group.run)
 
 
 _register()
