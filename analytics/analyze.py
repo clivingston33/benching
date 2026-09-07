@@ -9,7 +9,10 @@ import statistics
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
 from tokenizers import Tokenizer
+
+from benchmark.status import scan_harbor_result_list
 
 ROOT = Path(__file__).resolve().parents[1]
 BUCKETS = ((0, 4096, "0-4K"), (4096, 16384, "4K-16K"), (16384, 32768, "16K-32K"), (32768, 65536, "32K-64K"), (65536, math.inf, "64K+"))
@@ -176,15 +179,37 @@ def values(rows: list[dict[str, Any]], section: str, key: str) -> list[float]:
             result.append(float(value))
     return result
 
+def harbor_task_results(run_dir: Path) -> list[dict[str, Any]]:
+    return scan_harbor_result_list(run_dir / "harbor")
+
+
+def _benchmark_from_task_results(results: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(results)
+    passed = sum(result.get("passed") is True for result in results)
+    timed_out = sum(result.get("timeout") is True for result in results)
+    errored = sum(bool(result.get("exception_type")) and not result.get("timeout") for result in results)
+    return {
+        "total_tasks": total,
+        "completed_tasks": max(0, total - timed_out - errored),
+        "passed_tasks": passed,
+        "failed_tasks": max(0, total - passed - timed_out - errored),
+        "errored_tasks": errored,
+        "timeout_tasks": timed_out,
+        "model_calls": None,
+        "score": passed / total if total else None,
+        "retries": None,
+    }
+
 
 def benchmark_result(run_dir: Path) -> dict[str, Any]:
+    results = harbor_task_results(run_dir)
     aggregate = next(iter(sorted((run_dir / "harbor").glob("*/result.json"))), None)
     if aggregate is None:
-        return {"total_tasks": 0, "completed_tasks": 0, "passed_tasks": 0, "failed_tasks": 0, "errored_tasks": 0, "timeout_tasks": 0, "model_calls": 0}
+        return _benchmark_from_task_results(results)
     try:
         result = read_json(aggregate)
     except (OSError, ValueError):
-        return {"total_tasks": 0, "completed_tasks": 0, "passed_tasks": 0, "failed_tasks": 0, "errored_tasks": 0, "timeout_tasks": 0, "model_calls": 0}
+        return _benchmark_from_task_results(results)
     stats = result.get("stats") if isinstance(result.get("stats"), dict) else {}
     evaluations = stats.get("evals") if isinstance(stats.get("evals"), dict) else {}
     evaluation = next(iter(evaluations.values()), {}) if evaluations else {}
@@ -195,6 +220,8 @@ def benchmark_result(run_dir: Path) -> dict[str, Any]:
     completed = stats.get("n_completed_trials", 0)
     exceptions = evaluation.get("exception_stats", {}) if isinstance(evaluation, dict) else {}
     timeout_tasks = len(exceptions.get("VerifierTimeoutError", [])) if isinstance(exceptions, dict) else 0
+    if not total and results:
+        return _benchmark_from_task_results(results)
     return {
         "total_tasks": total,
         "completed_tasks": completed,
@@ -257,6 +284,76 @@ def _sum_metric(rows: list[dict[str, Any]], key: str) -> int | float | None:
     values_for_key = values(rows, "tokens", key)
     return sum(values_for_key) if values_for_key else None
 
+def task_summaries(rows: list[dict[str, Any]], run_dir: Path) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        key = (str(row.get("task_id") or "unknown"), str(row.get("trial_id") or "unknown"))
+        grouped.setdefault(key, []).append(row)
+    results = harbor_task_results(run_dir)
+    by_key = {(result["task_id"], result["trial_id"]): result for result in results if result.get("trial_id") is not None}
+    without_trial = {result["task_id"]: result for result in results if result.get("trial_id") is None}
+    keys = set(grouped)
+    for result in results:
+        task_id = result["task_id"]
+        matching = [key for key in grouped if key[0] == task_id]
+        if result.get("trial_id") is None and len(matching) == 1:
+            continue
+        keys.add((task_id, result.get("trial_id")))
+
+    output = []
+    for task_id, trial_id in sorted(keys, key=lambda key: (key[0], str(key[1]))):
+        task_rows = grouped.get((task_id, trial_id), [])
+        result = by_key.get((task_id, trial_id))
+        if result is None and len([key for key in grouped if key[0] == task_id]) == 1:
+            result = without_trial.get(task_id)
+        successful = sum(row.get("reliability", {}).get("success") is True for row in task_rows)
+        request_count = len(task_rows)
+        ttft = _summary_distribution(task_rows, "timing", "ttft_ms")
+        end_to_end = _summary_distribution(task_rows, "timing", "end_to_end_latency_ms")
+        output.append(
+            {
+                "task_id": task_id,
+                "trial_id": trial_id,
+                "passed": result.get("passed") if result else None,
+                "reward": result.get("reward") if result else None,
+                "duration_sec": result.get("duration_sec") if result else None,
+                "exception": result.get("exception_type") if result else None,
+                "timeout": result.get("timeout") if result else None,
+                "requests": request_count,
+                "tokens": {
+                    "input": _sum_metric(task_rows, "input_provider"),
+                    "output": _sum_metric(task_rows, "output_provider"),
+                    "cache_read": _sum_metric(task_rows, "cache_read"),
+                    "cache_write": _sum_metric(task_rows, "cache_write"),
+                },
+                "latency": {
+                    "ttft_ms_mean": ttft["mean"],
+                    "ttft_ms_p50": ttft["p50"],
+                    "ttft_ms_p95": ttft["p95"],
+                    "end_to_end_latency_ms_mean": end_to_end["mean"],
+                },
+                "reliability": {
+                    "successful_requests": successful,
+                    "failed_requests": request_count - successful,
+                    "success_rate": successful / request_count if request_count else None,
+                },
+            }
+        )
+    return output
+
+
+def canonical_context(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    output = {}
+    for name, bucket in context_buckets(rows).items():
+        output[name] = {
+            "requests": bucket["requests"],
+            "ttft_ms": {"mean": bucket["ttft_ms"]["mean"], "p50": bucket["ttft_ms"]["median"], "p95": bucket["ttft_ms"]["p95"]},
+            "decode_tps": {"mean": bucket["decode_tps"]["mean"], "p50": bucket["decode_tps"]["median"], "p95": bucket["decode_tps"]["p95"]},
+            "end_to_end_latency_ms": {"mean": bucket["end_to_end_latency_ms"]["mean"]},
+            "failure_rate": bucket["failure_rate"],
+        }
+    return output
+
 
 def build_summary(run: dict[str, Any], rows: list[dict[str, Any]], run_dir: Path) -> dict[str, Any]:
     """Build the self-contained dashboard artifact for one analyzed run."""
@@ -310,19 +407,7 @@ def build_summary(run: dict[str, Any], rows: list[dict[str, Any]], run_dir: Path
     )
     tokens = {key: _sum_metric(rows, key) for key in ("input_provider", "output_provider", "total_provider", "cache_read", "cache_write", "output_local")}
     tokens.update({"input": tokens["input_provider"], "output": tokens["output_provider"]})
-    tasks = [
-        {
-            "task_id": row.get("task_id"),
-            "trial_id": row.get("trial_id"),
-            "request_id": row.get("request_id"),
-            "success": row.get("reliability", {}).get("success"),
-            "stream_completed": row.get("reliability", {}).get("stream_completed"),
-            "timing": row.get("timing", {}),
-            "tokens": row.get("tokens", {}),
-            "reliability": row.get("reliability", {}),
-        }
-        for row in rows
-    ]
+    tasks = task_summaries(rows, run_dir)
     return {
         "schema_version": 1,
         "run_id": run.get("run_id") or run_dir.name,
@@ -347,6 +432,7 @@ def build_summary(run: dict[str, Any], rows: list[dict[str, Any]], run_dir: Path
         "latency": latency,
         "reliability": reliability,
         "tokens": tokens,
+        "context": canonical_context(rows),
         "tasks": tasks,
     }
 

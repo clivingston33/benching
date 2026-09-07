@@ -176,7 +176,7 @@ def test_normalize_writes_canonical_dashboard_summary_with_unavailable_local_met
     assert set(summary) == {
         "schema_version", "run_id", "created_at_utc", "benchmark", "provider",
         "model", "reasoning", "execution", "score", "speed", "latency",
-        "reliability", "tokens", "tasks",
+        "reliability", "tokens", "context", "tasks",
     }
     assert summary["schema_version"] == 1
     assert summary["run_id"] == "run-1"
@@ -195,4 +195,6 @@ def test_normalize_writes_canonical_dashboard_summary_with_unavailable_local_met
     assert summary["tokens"]["output_local"] is None
     assert summary["speed"]["decode_tps"]["mean"] is None
     assert summary["speed"]["effective_tps"]["mean"] is None
+    assert summary["context"]["0-4K"]["requests"] == 1
     assert summary["tasks"][0]["task_id"] == "task-1"
+    assert summary["tasks"][0]["requests"] == 1

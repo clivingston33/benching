@@ -14,13 +14,11 @@ progress during a run.
 from __future__ import annotations
 
 import json
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from benchmark._paths import ROOT
 
 LIFECYCLE_PHASES = frozenset({"docker", "tokenizer", "validate", "proxy", "running", "analyze", "done"})
 TASK_LIFECYCLE = frozenset({"task_started", "task_completed", "task_failed", "task_timed_out"})
@@ -64,52 +62,53 @@ def _num(value: Any) -> float | None:
 
 
 def _parse_result(path: Path) -> dict[str, Any] | None:
-    """Parse a harbor result.json into a normalized task outcome."""
+    """Parse a Harbor result.json into a normalized task outcome."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(data, dict):
         return None
-    task_name = str(data.get("task_name") or "").replace("terminal-bench/", "")
+    task_name = str(data.get("task_name") or data.get("task_id") or "").replace("terminal-bench/", "")
     if not task_name:
         return None
     reward = None
     verifier = data.get("verifier_result") if isinstance(data.get("verifier_result"), dict) else {}
     if isinstance(verifier.get("rewards"), dict):
         reward = verifier["rewards"].get("reward")
+    try:
+        reward = float(reward) if reward is not None else None
+    except (TypeError, ValueError):
+        reward = None
     exc_info = data.get("exception_info") if isinstance(data.get("exception_info"), dict) else {}
     exception_type = exc_info.get("exception_type")
-    outcome = "completed"
-    if reward == 1.0:
-        outcome = "passed"
-    elif exception_type:
-        if "Timeout" in str(exception_type) or "timeout" in str(exception_type).lower():
-            outcome = "timed_out"
-        else:
-            outcome = "failed"
-    else:
-        outcome = "failed"
+    timeout = bool(exception_type and ("timeout" in str(exception_type).lower()))
+    outcome = "passed" if reward == 1.0 else "timed_out" if timeout else "failed"
+    trial_id = data.get("trial_id") or data.get("trial_name") or data.get("trial")
     return {
         "task_name": task_name,
+        "task_id": task_name,
+        "trial_id": str(trial_id) if trial_id is not None else None,
         "reward": reward,
+        "passed": reward == 1.0 if reward is not None else None,
         "outcome": outcome,
         "exception_type": exception_type,
-        "duration_sec": None,
+        "duration_sec": data.get("duration_sec"),
+        "timeout": timeout if exception_type else False if reward is not None else None,
     }
 
-
-def scan_harbor_results(jobs_dir: Path) -> dict[str, dict[str, Any]]:
-    """Return {task_name: normalized result} for every harbor result.json.
-
-    Used both for the live progress view (re-read on each refresh) and for
-    post-run aggregation. Missing/unparseable files are skipped.
-    """
-    results: dict[str, dict[str, Any]] = {}
+def scan_harbor_result_list(jobs_dir: Path) -> list[dict[str, Any]]:
+    """Return every parseable Harbor task result without collapsing trials."""
     if not jobs_dir.is_dir():
-        return results
+        return []
+    results = []
     for path in sorted(jobs_dir.rglob("result.json")):
         parsed = _parse_result(path)
         if parsed is not None:
-            results[parsed["task_name"]] = parsed
+            results.append(parsed)
     return results
+
+
+def scan_harbor_results(jobs_dir: Path) -> dict[str, dict[str, Any]]:
+    """Return the latest parsed result for each task name."""
+    return {result["task_name"]: result for result in scan_harbor_result_list(jobs_dir)}

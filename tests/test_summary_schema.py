@@ -20,6 +20,7 @@ SUMMARY_KEYS = {
     "latency",
     "reliability",
     "tokens",
+    "context",
     "tasks",
 }
 
@@ -39,7 +40,13 @@ def assert_summary_schema(summary: dict) -> None:
     assert {"passed", "failed", "total", "success_rate"} <= set(summary["score"])
     assert {"successful_requests", "failed_requests", "success_rate"} <= set(summary["reliability"])
     assert {"input", "output", "cache_read"} <= set(summary["tokens"])
+    assert set(summary["context"]) == {"0-4K", "4K-16K", "16K-32K", "32K-64K", "64K+"}
     assert isinstance(summary["tasks"], list)
+    if summary["tasks"]:
+        assert {
+            "task_id", "trial_id", "passed", "reward", "duration_sec", "exception",
+            "timeout", "requests", "tokens", "latency", "reliability",
+        } == set(summary["tasks"][0])
 
 
 def write_run(root: Path, index: int, model: str, tokenizer: tuple[str | None, str | None], *, success: bool = True, timeout: bool = False) -> Path:
@@ -84,6 +91,54 @@ def write_run(root: Path, index: int, model: str, tokenizer: tuple[str | None, s
     (directory / "run.json").write_text(json.dumps(run), encoding="utf-8")
     (directory / "raw.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
     return directory
+
+
+def write_harbor_result(directory: Path, task_id: str, trial_id: str, *, reward: float | None = None, exception: str | None = None, duration_sec: float | None = 12.5) -> None:
+    result = {
+        "task_name": f"terminal-bench/{task_id}",
+        "trial_id": trial_id,
+        "duration_sec": duration_sec,
+        "verifier_result": {},
+        "exception_info": {},
+    }
+    if reward is not None:
+        result["verifier_result"] = {"rewards": {"reward": reward}}
+    if exception is not None:
+        result["exception_info"] = {"exception_type": exception}
+    target = directory / "harbor" / f"{task_id}-{trial_id}"
+    target.mkdir(parents=True)
+    (target / "result.json").write_text(json.dumps(result), encoding="utf-8")
+
+
+def task_run(tmp_path: Path, outcomes: list[tuple[str, str, float | None, str | None, int]]) -> dict:
+    directory = write_run(tmp_path, 1, "model-a", ("org/tokenizer", "rev"))
+    rows = []
+    for task_id, trial_id, reward, exception, request_count in outcomes:
+        for request_index in range(request_count):
+            rows.append(
+                {
+                    "event_type": "inference",
+                    "run_id": directory.name,
+                    "request_id": f"{task_id}-{trial_id}-{request_index}",
+                    "provider": "provider-1",
+                    "task_id": task_id,
+                    "trial_id": trial_id,
+                    "model": "model-a",
+                    "timing": {"first_content_output_ms": 100.0, "last_content_output_ms": 600.0, "stream_completed_ms": 900.0},
+                    "tokens": {"input_provider": 100, "output_provider": 50, "total_provider": 150, "cache_read": 25, "cache_write": None},
+                    "output_text": "hello",
+                    "output_text_truncated": False,
+                    "success": exception is None,
+                    "stream_completed": exception is None,
+                    "downstream_cancelled": False,
+                    "provider_failure": exception is not None,
+                    "error_type": exception,
+                    "http_status": 200 if exception is None else 504,
+                }
+            )
+        write_harbor_result(directory, task_id, trial_id, reward=reward, exception=exception)
+    (directory / "raw.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    return normalize_runs([directory], write_comparison=False)["runs"][0]
 
 
 def comparison(tmp_path: Path, models: tuple[str, str], tokenizers: tuple[tuple[str | None, str | None], tuple[str | None, str | None]]) -> dict:
@@ -134,7 +189,7 @@ def test_failed_requests_are_represented_in_summary() -> None:
 
 def test_task_timeout_is_represented_in_summary() -> None:
     summary = summary_fixture()
-    timeout_tasks = [task for task in summary["tasks"] if task["reliability"].get("timeout")]
+    timeout_tasks = [task for task in summary["tasks"] if task["timeout"]]
     assert timeout_tasks
     assert summary["score"]["timeout"] == 0
 
@@ -152,3 +207,64 @@ def test_full_run_summary() -> None:
     assert_summary_schema(summary)
     assert summary["run_id"].endswith("ab12cd34")
     assert summary["benchmark"]["task_count"] == 89
+
+
+def test_passed_task_uses_harbor_outcome(tmp_path: Path) -> None:
+    summary = task_run(tmp_path, [("task-pass", "trial-1", 1.0, None, 1)])
+    task = summary["tasks"][0]
+    assert task["passed"] is True
+    assert task["reward"] == 1.0
+    assert task["exception"] is None
+
+
+def test_failed_verifier_task_uses_harbor_reward(tmp_path: Path) -> None:
+    task = task_run(tmp_path, [("task-fail", "trial-1", 0.0, None, 1)])["tasks"][0]
+    assert task["passed"] is False
+    assert task["reward"] == 0.0
+
+    assert task["timeout"] is False
+def test_timed_out_task_preserves_missing_reward(tmp_path: Path) -> None:
+    task = task_run(tmp_path, [("task-timeout", "trial-1", None, "VerifierTimeoutError", 0)])["tasks"][0]
+    assert task["passed"] is None
+    assert task["reward"] is None
+    assert task["timeout"] is True
+    assert task["requests"] == 0
+
+
+def test_errored_task_preserves_exception(tmp_path: Path) -> None:
+    task = task_run(tmp_path, [("task-error", "trial-1", None, "ContainerError", 1)])["tasks"][0]
+    assert task["passed"] is None
+    assert task["exception"] == "ContainerError"
+    assert task["timeout"] is False
+
+
+def test_multiple_requests_produce_one_task_entry(tmp_path: Path) -> None:
+    summary = task_run(tmp_path, [("task-many", "trial-1", 1.0, None, 3)])
+    assert len(summary["tasks"]) == 1
+    assert summary["tasks"][0]["requests"] == 3
+    assert len(summary["tasks"]) != 3
+    assert summary["tasks"][0]["tokens"]["input"] == 300
+
+
+def test_multiple_trials_produce_one_entry_per_trial(tmp_path: Path) -> None:
+    summary = task_run(
+        tmp_path,
+        [
+            ("task-trials", "trial-1", 1.0, None, 1),
+            ("task-trials", "trial-2", 0.0, None, 2),
+        ],
+    )
+    assert {(task["task_id"], task["trial_id"]) for task in summary["tasks"]} == {
+        ("task-trials", "trial-1"),
+        ("task-trials", "trial-2"),
+    }
+    assert [task["requests"] for task in summary["tasks"]] == [1, 2]
+
+
+def test_context_buckets_are_canonical_and_normalized(tmp_path: Path) -> None:
+    summary = task_run(tmp_path, [("task-context", "trial-1", 1.0, None, 2)])
+    bucket = summary["context"]["0-4K"]
+    assert bucket["requests"] == 2
+    assert bucket["ttft_ms"]["mean"] == 100.0
+    assert bucket["decode_tps"]["p50"] is None
+    assert bucket["failure_rate"] == 0.0
