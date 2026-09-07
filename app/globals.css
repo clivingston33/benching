@@ -146,11 +146,7 @@ body {
 
 .th-metric { width: 21%; background: transparent !important; border-bottom: none !important; }
 .th-note { width: 23%; background: transparent !important; border-bottom: none !important; }
-.th-kourier { border-bottom-color: #1F704C !important; }
-.th-electron { border-bottom-color: #A242FB !important; }
 .provider-label { font-size: 13px; font-weight: 700; letter-spacing: -0.01em; }
-.th-kourier .provider-label { color: #2ec27a; }
-.th-electron .provider-label { color: #c084fc; }
 .provider-model { display: block; margin-top: 2px; font-size: 10.5px; font-weight: 500; color: #9a9a9a; letter-spacing: 0; }
 .data-note { margin-top: 14px; font-size: 12px; color: #9a9a9a; line-height: 1.6; max-width: 720px; }
 
@@ -169,8 +165,6 @@ body {
 .chart-wrap .stroke-border { stroke: #333; }
 .chart-wrap button { color: #9a9a9a; font-family: ui-monospace, monospace; }
 .chart-metrics { display: flex; justify-content: center; gap: 24px; margin-top: 10px; font-size: 12px; font-weight: 600; }
-.chart-metrics span.kourier { color: #2ec27a; }
-.chart-metrics span.electron { color: #c084fc; }
 
 .benchmarks-card { margin-top: 24px; border: 1px solid #333; background: #252525; padding: 18px 20px 14px; overflow: hidden; }
 .benchmarks-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -197,15 +191,9 @@ body {
 .bench-bar-col { width: 200px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; justify-content: flex-end; position: relative; }
 .bench-bar { width: 100%; border-radius: 3px 3px 0 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700; min-height: 32px; position: relative; cursor: pointer; transition: filter 0.15s, transform 0.15s; }
 .bench-bar:hover { filter: brightness(1.15); transform: translateY(-1px); }
-.bench-bar-kourier { background: #1F704C; }
-.bench-bar-kourier-light { background: #2a9d6b; }
-.bench-bar-electron { background: #A242FB; }
-.bench-bar-electron-light { background: #a78bfa; }
 .bench-logo { width: 20px; height: 20px; display: block; object-fit: contain; border-radius: 50%; background: #2a2a2a; border: 1px solid #444; flex-shrink: 0; }
 .bench-label { font-size: 10px; color: #cbd5e1; white-space: nowrap; margin-top: 6px; text-align: left; line-height: 1.15; transform: rotate(-35deg); transform-origin: left top; margin-left: 18px; }
 .bench-label em { font-style: normal; font-weight: 600; }
-.bench-label-kourier em { color: #2ec27a; }
-.bench-label-electron em { color: #c084fc; }
 .bench-tooltip {
   position: absolute;
   bottom: calc(100% + 10px);
@@ -242,14 +230,6 @@ body {
 .stacked-col { width: 200px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; justify-content: flex-end; position: relative; }
 .stacked-bar { width: 100%; border-radius: 3px 3px 0 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
 .stack-seg { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 700; min-height: 18px; position: relative; }
-.seg-kourier-1 { background: #1F704C; }
-.seg-kourier-2 { background: #2ec27a; }
-.seg-kourier-3 { background: #86efac; color: #111; }
-.seg-electron-1 { background: #A242FB; }
-.seg-electron-2 { background: #a78bfa; }
-.seg-electron-3 { background: #ddd6fe; color: #111; }
-.seg-timeout { background: #1F704C; }
-.seg-other { background: #86efac; color: #111; }
 .stack-legend { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 10px; font-size: 11px; color: #cbd5e1; flex-wrap: wrap; }
 .stack-total { font-size: 12px; font-weight: 700; color: #e8e8e8; position: absolute; top: -18px; left: 50%; transform: translateX(-50%); white-space: nowrap; }
 .stack-total-top { font-size: 11px; font-weight: 700; color: #e8e8e8; margin-bottom: 4px; }
@@ -260,8 +240,6 @@ body {
 .rh-select-wrap { position: relative; display: flex; align-items: center; }
 .rh-select-wrap select { appearance: none; padding: 6px 28px 6px 10px; border: 1px solid #444; border-radius: 6px; background: #2a2a2a; font-size: 12px; color: #e8e8e8; min-width: 140px; width: 100%; }
 .rh-chevron { position: absolute; right: 10px; pointer-events: none; font-size: 10px; color: #9a9a9a; line-height: 1; }
-.rh-compare { padding: 7px 14px; border-radius: 6px; border: 1px solid #e8e8e8; background: #e8e8e8; color: #111; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; width: auto; flex-shrink: 0; align-self: flex-end; }
-.rh-warning { margin-top: 12px; padding: 10px 12px; background: #422006; border: 1px solid #92400e; border-radius: 6px; font-size: 12px; color: #fcd34d; }
 .rh-trend { margin-top: 18px; border: 1px solid #333; background: #252525; padding: 12px; }
 .rh-trend-header { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; color: #e8e8e8; margin-bottom: 8px; }
 .rh-metric-select select { padding: 4px 8px; border: 1px solid #444; border-radius: 6px; font-size: 11px; background: #2a2a2a; color: #e8e8e8; }

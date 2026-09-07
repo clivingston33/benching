@@ -29,7 +29,7 @@ export default function Home() {
       <div className="hero">
         <h1>
           <span>Independent</span>
-          <span>analysis of AI</span>
+          <span>benchmark data</span>
         </h1>
         <p className="subtitle">
           Understand the AI landscape to choose the best

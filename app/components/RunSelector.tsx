@@ -1,7 +1,6 @@
 "use client";
 
 import { useRunSelection, fmtDate } from "@/lib/run-selection";
-import { runDates } from "@/lib/benchmark-data";
 
 export default function RunSelector() {
   const { selection, setSelection, dates } = useRunSelection();

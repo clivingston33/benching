@@ -14,95 +14,49 @@ import { XAxis } from "@/dither-kit/XAxis";
 import { YAxis } from "@/dither-kit/YAxis";
 import { Tooltip } from "@/dither-kit/Tooltip";
 import { Legend } from "@/dither-kit/Legend";
-import {
-  ttftRowsFor,
-  responseRowsFor,
-  latencyContextPointsFor,
-  providerConfig,
-} from "@/lib/benchmark-data";
+import { chartConfigFor, contextRowsFor, getComparison, metricRowsFor } from "@/lib/benchmark-data";
 import { useRunSelection } from "@/lib/run-selection";
+
 type Tab = "ttft" | "response" | "context";
 
-const latencyConfig = providerConfig;
-
 export default function LatencySection() {
-  const { selection, label } = useRunSelection();
+  const { selection } = useRunSelection();
   const [tab, setTab] = useState<Tab>("ttft");
-  const ttftRows = ttftRowsFor(selection);
-  const responseRows = responseRowsFor(selection);
-  const contextPoints = latencyContextPointsFor(selection);
+  const comparison = getComparison(selection);
+  const providers = comparison.providers.map((run) => run.provider);
+  const metric = tab === "ttft" ? "ttftMs" : "endToEndMs";
+  const rows = metricRowsFor(selection, metric);
+  const contextRows = contextRowsFor(selection, "latency");
+  const logos = Object.fromEntries(providers.map((provider) => [provider.id, provider.logo ?? ""]));
 
   return (
     <div className="benchmarks-card">
       <div className="benchmarks-tabs">
-        <button className={`bench-tab ${tab === "ttft" ? "active" : ""}`} onClick={() => setTab("ttft")}>
-          Time to First Token
-        </button>
-        <button className={`bench-tab ${tab === "response" ? "active" : ""}`} onClick={() => setTab("response")}>
-          Response Time
-        </button>
-        <button className={`bench-tab ${tab === "context" ? "active" : ""}`} onClick={() => setTab("context")}>
-          Latency by context length
-        </button>
+        <button className={`bench-tab ${tab === "ttft" ? "active" : ""}`} onClick={() => setTab("ttft")}>Time to First Token</button>
+        <button className={`bench-tab ${tab === "response" ? "active" : ""}`} onClick={() => setTab("response")}>Response Time</button>
+        <button className={`bench-tab ${tab === "context" ? "active" : ""}`} onClick={() => setTab("context")}>Latency by context length</button>
       </div>
-
       <div className="benchmarks-header">
-        <h3 className="bench-title">
-          {tab === "ttft" && "Time to First Token"}
-          {tab === "response" && "Response Time"}
-          {tab === "context" && "Latency by Context Length"}
-          <span className="bench-arrow">↗</span>
-        </h3>
-        <p className="bench-desc">
-          {tab === "context"
-            ? "Median TTFT vs input context length — Lower is better."
-            : "Median values — Lower is better."}
-          {" · "}
-          {label}
-        </p>
+        <h3 className="bench-title">{tab === "ttft" ? "Time to First Token" : tab === "response" ? "Response Time" : "Latency by Context Length"} <span className="bench-arrow">↗</span></h3>
+        <p className="bench-desc">{tab === "context" ? "Time to first token by context length" : "Precomputed latency metrics"} · Lower is better · {comparison.label}</p>
       </div>
       <div className="chart-wrap" style={{ height: tab === "context" ? 360 : 340 }}>
-        {tab === "ttft" && (
-          <BarChart data={ttftRows} config={latencyConfig} className="h-full w-full" margins={{ top: 52, right: 12, bottom: 36, left: 52 }}>
-            <Grid horizontal />
-            <XAxis dataKey="bench" />
-            <YAxis tickCount={5} />
-            <Bar dataKey="kourier" />
-            <Bar dataKey="electronhub" />
-            <BarLabels formatter={(v) => `${Math.round(v)}ms`} offset={12} />
-            <BarSeriesLogos logos={{ kourier: "/kourier.svg", electronhub: "/electron.svg" }} />
-            <Legend align="right" />
-            <Tooltip labelKey="bench" valueFormatter={(v) => `${v} ms`} />
+        {tab !== "context" ? (
+          <BarChart data={rows} config={chartConfigFor(providers)} className="h-full w-full" margins={{ top: 52, right: 12, bottom: 36, left: 52 }}>
+            <Grid horizontal /><XAxis dataKey="bench" /><YAxis tickCount={5} />
+            {providers.map((provider) => <Bar key={provider.id} dataKey={provider.id} />)}
+            <BarLabels formatter={(value) => `${Math.round(value)}ms`} offset={12} /><BarSeriesLogos logos={logos} /><Legend align="right" />
+            <Tooltip labelKey="bench" valueFormatter={(value) => `${value} ms`} />
           </BarChart>
-        )}
-        {tab === "response" && (
-          <BarChart data={responseRows} config={latencyConfig} className="h-full w-full" margins={{ top: 52, right: 12, bottom: 36, left: 52 }}>
-            <Grid horizontal />
-            <XAxis dataKey="bench" />
-            <YAxis tickCount={5} />
-            <Bar dataKey="kourier" />
-            <Bar dataKey="electronhub" />
-            <BarLabels formatter={(v) => `${v.toFixed(1)}s`} offset={12} />
-            <BarSeriesLogos logos={{ kourier: "/kourier.svg", electronhub: "/electron.svg" }} />
-            <Legend align="right" />
-            <Tooltip labelKey="bench" valueFormatter={(v) => `${v.toFixed(1)} s`} />
-          </BarChart>
-        )}
-        {tab === "context" && (
-          <LineChart data={contextPoints} config={latencyConfig} className="h-full w-full" margins={{ top: 32, right: 12, bottom: 22, left: 52 }}>
-            <Grid horizontal />
-            <XAxis dataKey="label" />
-            <YAxis tickCount={5} />
-            <Crosshair />
-            <Line dataKey="kourier"><ActiveDot /></Line>
-            <Line dataKey="electronhub"><ActiveDot /></Line>
-            <Legend align="right" />
-            <Tooltip labelKey="label" valueFormatter={(v) => `${v} ms`} />
+        ) : (
+          <LineChart data={contextRows} config={chartConfigFor(providers)} className="h-full w-full" margins={{ top: 32, right: 12, bottom: 22, left: 52 }}>
+            <Grid horizontal /><XAxis dataKey="label" /><YAxis tickCount={5} /><Crosshair />
+            {providers.map((provider) => <Line key={provider.id} dataKey={provider.id}><ActiveDot /></Line>)}
+            <Legend align="right" /><Tooltip labelKey="label" valueFormatter={(value) => `${value} ms`} />
           </LineChart>
         )}
       </div>
-
-      <div className="bench-foot">Lower is better · {label}</div>
+      <div className="bench-foot">Lower is better · {comparison.label}</div>
     </div>
   );
 }
