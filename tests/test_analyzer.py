@@ -127,3 +127,66 @@ def test_downstream_cancel_is_not_provider_failure() -> None:
     assert reliability["provider_failure"] is False
     assert reliability["provider_stream_failure"] is False
     assert reliability["incomplete_provider_stream"] is False
+
+def test_normalize_writes_canonical_dashboard_summary_with_unavailable_local_metrics(tmp_path) -> None:
+    directory = tmp_path / "run-1"
+    directory.mkdir()
+    (directory / "harbor" / "eval").mkdir(parents=True)
+    run = {
+        "schema_version": 1,
+        "run_id": "run-1",
+        "created_at_utc": "2026-01-02T03:04:05Z",
+        "benchmark": "task-suite",
+        "benchmark_version": "1.0",
+        "task_count": 1,
+        "tasks": ["task-1"],
+        "provider": "acme",
+        "model": "api-model-1",
+        "benchmark_model": "model-x",
+        "api_model": "api-model-1",
+        "reasoning_mode": "enabled",
+        "concurrency": 3,
+        "trials": 2,
+        "tokenizer": {"repo": "org/tokenizer", "revision": "rev-1", "local_cache": str(tmp_path / "missing-tokenizer")},
+    }
+    (directory / "run.json").write_text(json.dumps(run), encoding="utf-8")
+    (directory / "raw.jsonl").write_text(json.dumps(raw_row()) + "\n", encoding="utf-8")
+    (directory / "harbor" / "eval" / "result.json").write_text(
+        json.dumps({
+            "n_total_trials": 1,
+            "stats": {
+                "n_completed_trials": 1,
+                "n_errored_trials": 0,
+                "evals": {"task-suite": {"reward_stats": {"reward": {"1.0": ["task-1"]}}}},
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    comparison = normalize_runs([directory], write_comparison=False)
+    summary = json.loads((directory / "summary.json").read_text(encoding="utf-8"))
+
+    assert comparison["models"] == ["api-model-1"]
+    assert set(summary) == {
+        "schema_version", "run_id", "created_at_utc", "benchmark", "provider",
+        "model", "reasoning", "execution", "score", "speed", "latency",
+        "reliability", "tokens", "tasks",
+    }
+    assert summary["schema_version"] == 1
+    assert summary["run_id"] == "run-1"
+    assert summary["created_at_utc"] == "2026-01-02T03:04:05Z"
+    assert summary["benchmark"] == {"name": "task-suite", "version": "1.0", "task_count": 1}
+    assert summary["provider"] == {"id": "acme", "name": "acme"}
+    assert summary["model"] == "api-model-1"
+    assert summary["reasoning"] == "enabled"
+    assert summary["execution"] == {"concurrency": 3, "trials": 2}
+    assert summary["score"]["value"] == 1.0
+    assert summary["score"]["passed"] == 1
+    assert summary["score"]["total"] == 1
+    assert summary["reliability"]["request_success_rate"] == 1.0
+    assert summary["reliability"]["stream_completion_rate"] == 1.0
+    assert summary["tokens"]["total_provider"] == 150
+    assert summary["tokens"]["output_local"] is None
+    assert summary["speed"]["decode_tps"]["mean"] is None
+    assert summary["speed"]["effective_tps"]["mean"] is None
+    assert summary["tasks"][0]["task_id"] == "task-1"

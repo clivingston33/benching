@@ -160,7 +160,7 @@ command.json             exact runner command
 proxy-routes.json        trusted upstream routing configuration
 raw.jsonl                proxy telemetry and captured debug data
 metrics.jsonl            normalized analytical records
-harbor/                  runner task artifacts
+summary.json             stable dashboard-facing run summary
 *.log                    runner and proxy logs
 ```
 

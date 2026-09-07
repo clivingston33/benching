@@ -247,6 +247,113 @@ def summarize(run: dict[str, Any], rows: list[dict[str, Any]], run_dir: Path) ->
         "benchmark": benchmark_result(run_dir),
         "context_buckets": context_buckets(rows),
     }
+def _summary_distribution(rows: list[dict[str, Any]], section: str, key: str) -> dict[str, Any]:
+    result = distribution(values(rows, section, key))
+    result["p50"] = result["median"]
+    return result
+
+
+def _sum_metric(rows: list[dict[str, Any]], key: str) -> int | float | None:
+    values_for_key = values(rows, "tokens", key)
+    return sum(values_for_key) if values_for_key else None
+
+
+def build_summary(run: dict[str, Any], rows: list[dict[str, Any]], run_dir: Path) -> dict[str, Any]:
+    """Build the self-contained dashboard artifact for one analyzed run."""
+    benchmark = benchmark_result(run_dir)
+    task_names = run.get("tasks") if isinstance(run.get("tasks"), list) else []
+    task_count = run.get("task_count")
+    if not isinstance(task_count, int):
+        task_count = len(task_names) or benchmark.get("total_tasks") or len({row.get("task_id") for row in rows})
+    provider_id = run.get("provider")
+    reliability = summarize(run, rows, run_dir)["reliability"]
+    successful_requests = sum(1 for row in rows if row.get("reliability", {}).get("success"))
+    failed_requests = len(rows) - successful_requests
+    reliability.update(
+        {
+            "successful_requests": successful_requests,
+            "failed_requests": failed_requests,
+            "success_rate": successful_requests / len(rows) if rows else None,
+        }
+    )
+    score = {
+        "value": benchmark.get("score"),
+        "passed": benchmark.get("passed_tasks"),
+        "failed": benchmark.get("failed_tasks"),
+        "total": benchmark.get("total_tasks") or task_count,
+        "success_rate": benchmark.get("score"),
+        "errored": benchmark.get("errored_tasks"),
+        "timeout": benchmark.get("timeout_tasks"),
+    }
+    speed = {
+        "decode_tps": _summary_distribution(rows, "timing", "decode_tps"),
+        "effective_tps": _summary_distribution(rows, "timing", "effective_tps"),
+    }
+    speed.update(
+        {
+            "output_tps_mean": speed["decode_tps"]["mean"],
+            "output_tps_p50": speed["decode_tps"]["p50"],
+            "output_tps_p95": speed["decode_tps"]["p95"],
+        }
+    )
+    latency = {
+        "ttft_ms": _summary_distribution(rows, "timing", "ttft_ms"),
+        "decode_duration_ms": _summary_distribution(rows, "timing", "decode_duration_ms"),
+        "end_to_end_latency_ms": _summary_distribution(rows, "timing", "end_to_end_latency_ms"),
+    }
+    latency.update(
+        {
+            "ttft_ms_mean": latency["ttft_ms"]["mean"],
+            "ttft_ms_p50": latency["ttft_ms"]["p50"],
+            "ttft_ms_p95": latency["ttft_ms"]["p95"],
+        }
+    )
+    tokens = {key: _sum_metric(rows, key) for key in ("input_provider", "output_provider", "total_provider", "cache_read", "cache_write", "output_local")}
+    tokens.update({"input": tokens["input_provider"], "output": tokens["output_provider"]})
+    tasks = [
+        {
+            "task_id": row.get("task_id"),
+            "trial_id": row.get("trial_id"),
+            "request_id": row.get("request_id"),
+            "success": row.get("reliability", {}).get("success"),
+            "stream_completed": row.get("reliability", {}).get("stream_completed"),
+            "timing": row.get("timing", {}),
+            "tokens": row.get("tokens", {}),
+            "reliability": row.get("reliability", {}),
+        }
+        for row in rows
+    ]
+    return {
+        "schema_version": 1,
+        "run_id": run.get("run_id") or run_dir.name,
+        "created_at_utc": run.get("created_at_utc") or datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "benchmark": {
+            "name": run.get("benchmark"),
+            "version": run.get("benchmark_version"),
+            "task_count": task_count,
+        },
+        "provider": {
+            "id": provider_id,
+            "name": run.get("provider_name") or provider_id,
+        },
+        "model": run.get("model") or run.get("api_model") or run.get("benchmark_model"),
+        "reasoning": run.get("reasoning_mode") or (run.get("effective_settings") or {}).get("reasoning"),
+        "execution": {
+            "concurrency": run.get("concurrency"),
+            "trials": run.get("trials"),
+        },
+        "score": score,
+        "speed": speed,
+        "latency": latency,
+        "reliability": reliability,
+        "tokens": tokens,
+        "tasks": tasks,
+    }
+
+
+def write_summary(path: Path, summary: dict[str, Any]) -> None:
+    path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
 
 
 def context_buckets(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -303,6 +410,7 @@ def normalize_runs(run_paths: list[Path], execution: str = "sequential", write_c
         raw = read_jsonl(run_dir / "raw.jsonl")
         normalized = normalize(run, raw, shared_tokenizer)
         write_jsonl(run_dir / "metrics.jsonl", normalized)
+        write_summary(run_dir / "summary.json", build_summary(run, normalized, run_dir))
         summaries.append(summarize(run, normalized, run_dir))
     benchmark_label = " ".join(part for part in (run_data[0].get("benchmark"), run_data[0].get("benchmark_version")) if part) or "unknown"
     models = list(dict.fromkeys(run.get("model") or run.get("api_model") for run in run_data if run.get("model") or run.get("api_model")))
