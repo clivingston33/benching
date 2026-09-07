@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from benchmark.benchmarks import active_root_config, add_benchmark, list_benchmarks, remove_benchmark, set_active_benchmark
-from benchmark.config import enabled_providers, load_yaml
+from benchmark.config import enabled_providers, load_yaml, provider_env_values, resolve
 from benchmark.providers import add_provider, remove_provider, set_active_provider, update_provider
 from benchmark.state import load_state, update_state
 
@@ -21,10 +21,14 @@ def test_provider_registry_merges_and_removes(tmp_path: Path) -> None:
     add_provider("acme", "https://api.acme.test/v1", "acme-model", "secret")
     root = load_yaml()
     assert "acme" in enabled_providers(root)
-    assert "ACME_API_KEY=secret" in (tmp_path / "benching" / "providers" / "acme.env").read_text()
+    assert root["providers"]["acme"]["default_model"] == "acme-model"
+    env_text = (tmp_path / "benching" / "providers" / "acme.env").read_text()
+    assert "ACME_API_KEY=secret" in env_text
+    assert "BASE_URL" not in env_text and "API_MODEL" not in env_text
     set_active_provider("acme")
-    update_provider("acme", api_model="acme-model-v2")
-    assert load_yaml()["providers"]["acme"]["api_model"] == "acme-model-v2"
+    update_provider("acme", base_url="https://new-api.acme.test/v1", default_model="acme-model-v2")
+    cfg = load_yaml()["providers"]["acme"]
+    assert resolve("acme", cfg, provider_env_values("acme", cfg)) == ("https://new-api.acme.test/v1", "acme-model-v2")
     remove_provider("acme")
     assert "acme" not in (load_yaml().get("providers") or {})
     assert load_state().active_provider is None
@@ -68,3 +72,14 @@ def test_shell_dispatch_persists_session_defaults() -> None:
     assert load_state().concurrency == 7
     assert load_state().reasoning == "enabled"
     assert not dispatch(session, "/exit")
+
+
+def test_shell_provider_validation_failure_does_not_exit(monkeypatch) -> None:
+    from cli.shell import Session, dispatch
+
+    def fail(*args, **kwargs):
+        raise SystemExit("provider unavailable")
+
+    monkeypatch.setattr("benchmark.providers.validate_registered_provider", fail)
+    session = Session.from_state(load_state())
+    assert dispatch(session, "/provider validate acme")

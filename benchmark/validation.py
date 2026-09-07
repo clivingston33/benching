@@ -11,7 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from benchmark._paths import RUNS
-from benchmark._util import redact, stream_summary, utc
+from benchmark._util import redact, stream_summary
 from benchmark.config import BenchmarkSpec, provider_config, resolve
 
 
@@ -72,6 +72,7 @@ def validate_provider(
     root_config: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
     env_values: dict[str, str] | None = None,
+    model_override: str | None = None,
 ) -> dict[str, Any]:
     """Validate a provider's credentials and model availability.
 
@@ -79,17 +80,17 @@ def validate_provider(
     provider cannot be used (missing credential, missing model, or a failed
     streaming completion). No result file is written here; callers decide.
     """
-    from benchmark.config import env_path, provider_env_values
+    from benchmark.config import provider_env_values
 
     if config is None:
         root_config, config = provider_config(name, root_config)
     assert root_config is not None
     env_values = env_values if env_values is not None else provider_env_values(name, config)
-    endpoint, api_model = resolve(name, config, env_values)
+    endpoint, api_model = resolve(name, config, env_values, model_override)
     key = env_values.get(str(config["auth_env"]))
     if not key:
         raise SystemExit(f"missing credential: {config['auth_env']}")
-    result: dict[str, Any] = {"schema_version": 1, "provider": name, "provider_plan": config.get("plan"), "benchmark_model": spec.model, "api_model": api_model, "base_url": endpoint, "models": None}
+    result: dict[str, Any] = {"schema_version": 1, "provider": name, "provider_plan": config.get("plan"), "benchmark_model": api_model, "api_model": api_model, "base_url": endpoint, "models": None}
     if config.get("strict_model_check"):
         try:
             with urlopen(Request(endpoint + "/models", headers={"Authorization": f"Bearer {key}"}), timeout=30) as response:

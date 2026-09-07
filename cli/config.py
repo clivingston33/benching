@@ -45,7 +45,7 @@ def show() -> None:
     providers.add_column("Base URL")
     for name in sorted((root.get("providers") or {})):
         cfg = root["providers"][name]
-        providers.add_row(name, "yes" if cfg.get("enabled") else "no", str(cfg.get("api_model") or ""), str(cfg.get("base_url") or ""))
+        providers.add_row(name, "yes" if cfg.get("enabled") else "no", str(cfg.get("default_model") or cfg.get("api_model") or ""), str(cfg.get("base_url") or ""))
     console.print(providers)
 
     state = load_state()

@@ -72,7 +72,7 @@ def test_harbor_command_preserves_agent_kwargs(tmp_path, monkeypatch) -> None:
     assert kwargs == [
         "provider=acme",
         "provider_plan=",
-        "benchmark_model=model-x",
+        "benchmark_model=acme-model-1",
         "model=acme-model-1",
         "upstream=https://api.acme.test/v1",
         "api_key_env=ACME_API_KEY",
@@ -88,10 +88,12 @@ def test_harbor_command_preserves_agent_kwargs(tmp_path, monkeypatch) -> None:
     assert "deepseek" not in " ".join(command).lower()
 
 
-def test_resolve_uses_configured_api_model() -> None:
-    endpoint, api_model = resolve("acme", {"base_url": "https://api.acme.test/v1", "api_model": "acme-model-1"}, {})
+def test_resolve_uses_registry_metadata_and_run_override() -> None:
+    config = {"base_url": "https://api.acme.test/v1", "default_model": "acme-model-1", "api_model": "legacy-model"}
+    endpoint, api_model = resolve("acme", config, {"ACME_BASE_URL": "https://old.test", "ACME_API_MODEL": "old-model"})
     assert endpoint == "https://api.acme.test/v1"
     assert api_model == "acme-model-1"
+    assert resolve("acme", config, {}, "new-model") == ("https://api.acme.test/v1", "new-model")
 
 
 def test_stream_validation_detects_content_and_usage() -> None:
@@ -122,7 +124,6 @@ def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) ->
     monkeypatch.setattr(runner, "task_names", lambda mode, spec: ["task-a"])
     monkeypatch.setattr(runner, "environment", lambda config, values=None: {})
 
-    spec = make_spec(expected_task_count=None)
     monkeypatch.setattr(runner, "run_directory", lambda *args, **kwargs: _FakeRunDir(tmp_path))
     monkeypatch.setattr(runner, "harbor_command", lambda *args, **kwargs: ["true"])
     monkeypatch.setattr(runner, "tokenizer_metadata", lambda spec, values=None: {"source": "huggingface"})
@@ -144,9 +145,8 @@ def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) ->
     root = {"benchmark": config["benchmark"], "providers": {"acme": {"enabled": True, "env_file": str(tmp_path / "acme.env"), "auth_env": "ACME_API_KEY", "base_url": "https://api.acme.test/v1", "api_model": "acme-model-1"}}}
     (tmp_path / "acme.env").write_text("ACME_API_KEY=secret\n", encoding="utf-8")
 
-    monkeypatch.setattr(runner, "load_yaml", lambda: root)
+    monkeypatch.setattr(runner, "resolve", lambda *args, **kwargs: ("https://api.acme.test/v1", "acme-model-1"))
     monkeypatch.setattr(runner, "benchmark_spec", lambda config: make_spec(expected_task_count=None))
-    monkeypatch.setattr(runner, "resolve", lambda name, config, values=None: ("https://api.acme.test/v1", "acme-model-1"))
     monkeypatch.setattr(runner, "provider_env_values", lambda name, config: {"ACME_API_KEY": "secret"})
     monkeypatch.setattr(runner, "provider_config", lambda name, root_config=None: (root, root["providers"]["acme"]))
 
@@ -156,8 +156,7 @@ def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) ->
 
     def collect(event: ProgressEvent) -> None:
         calls.append((event.phase, event.message))
-
-    runner.run_one(RunOptions(provider="acme", mode="full"), root, progress=collect)
+    runner.run_one(RunOptions(provider="acme", mode="full", benchmark_model="other-model", reasoning="enabled"), root, progress=collect)
 
     phases = [phase for phase, _ in calls]
     assert phases == ["docker", "tokenizer", "validate", "validate", "proxy", "running", "analyze", "done"]

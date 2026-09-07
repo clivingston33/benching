@@ -3,16 +3,9 @@
 from __future__ import annotations
 
 import json
-import sys
 
-from benchmark._paths import DEFAULT_CONCURRENCY, DEFAULT_TRIALS, PROXY_PORT
-from benchmark.config import (
-    all_provider_env_values,
-    benchmark_spec,
-    enabled_providers,
-    load_yaml,
-    resolve,
-)
+from benchmark._paths import DEFAULT_CONCURRENCY, DEFAULT_TRIALS
+from benchmark.config import all_provider_env_values, benchmark_spec, enabled_providers, load_yaml
 from benchmark.concurrency import probe_provider
 from benchmark.runner import RunOptions, analyze_runs, compare, run_one
 from benchmark.tokenizer import ensure_tokenizer
@@ -25,10 +18,10 @@ def main() -> None:
     root_config = load_yaml()
     spec = benchmark_spec(root_config)
     providers = enabled_providers(root_config)
-    default_model = spec.model
+    default_model = None
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers(dest="command", required=True)
-    default_reasoning = spec.reasoning
+    default_reasoning = "default"
     for mode in ("smoke", "full"):
         command = commands.add_parser(mode)
         command.add_argument("--provider", required=True, choices=providers or None)

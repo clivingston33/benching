@@ -12,7 +12,6 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,7 +22,6 @@ from benchmark._util import utc
 from benchmark.config import (
     BenchmarkSpec,
     benchmark_spec,
-    env_path,
     environment,
     load_yaml,
     provider_config,
@@ -122,7 +120,7 @@ def run_directory(
         "created_at_utc": utc(),
         "benchmark": spec.name,
         "benchmark_version": spec.version,
-        "benchmark_model": options.benchmark_model or spec.model,
+        "benchmark_model": options.benchmark_model or api_model,
         "task_count": len(tasks),
         "tasks": tasks,
         "agent": spec.agent,
@@ -171,7 +169,7 @@ def harbor_command(options: RunOptions, spec: BenchmarkSpec, config: dict[str, A
     agent_kwargs = {
         "provider": options.provider,
         "provider_plan": config.get("plan") or "",
-        "benchmark_model": options.benchmark_model or spec.model,
+        "benchmark_model": options.benchmark_model or api_model,
         "model": api_model,
         "upstream": endpoint,
         "api_key_env": config["auth_env"],
@@ -198,7 +196,8 @@ def start_proxy(directory: Path, port: int = PROXY_PORT) -> subprocess.Popen[byt
     while time.monotonic() < deadline:
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.2):
-                stdout.close(); stderr.close()
+                stdout.close()
+                stderr.close()
                 return process
         except OSError:
             if process.poll() is not None:
@@ -307,7 +306,8 @@ def _read_live_metrics(raw_path: Path) -> tuple[float | None, float | None]:
                     decode_tps.append(float(output_tokens) / (decode_ms / 1000.0))
     except OSError:
         return None, None
-    average = lambda values: round(sum(values) / len(values), 1) if values else None
+    def average(values: list[float]) -> float | None:
+        return round(sum(values) / len(values), 1) if values else None
     return average(ttft), average(decode_tps)
 
 
@@ -334,17 +334,13 @@ def run_one(
     root_config, config = provider_config(options.provider, root_config)
     spec = options.benchmark or benchmark_spec(root_config)
     values = provider_env_values(options.provider, config)
-    if options.reasoning != spec.reasoning:
-        raise SystemExit(f"benchmark reasoning mode ({spec.reasoning}) does not match --reasoning {options.reasoning}")
-    if options.benchmark_model and spec.model and options.benchmark_model != spec.model:
-        raise SystemExit("--model does not match benchmark.model in config/benchmark.yaml")
-    endpoint, api_model = resolve(options.provider, config, values)
+    endpoint, api_model = resolve(options.provider, config, values, options.benchmark_model)
     tokenizer = tokenizer_metadata(spec, values)
     if tokenizer["source"] != "huggingface":
         raise SystemExit("tokenizer is not cached; run `benching tokenizer prepare`")
     emit(_event("tokenizer", "tokenizer cached"))
     emit(_event("validate", f"validating {options.provider}"))
-    result = validate_provider(options.provider, spec, root_config, config, values)
+    result = validate_provider(options.provider, spec, root_config, config, values, api_model)
     if not result["success"]:
         raise SystemExit(f"provider validation failed: {result['error_class']}")
     tasks = task_names(options.mode, spec)

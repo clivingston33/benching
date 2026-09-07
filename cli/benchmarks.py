@@ -38,7 +38,7 @@ def add(
     version: str = typer.Option(..., "--version", prompt=True, help="Suite version"),
     tasks_dir: str = typer.Option(..., "--tasks-dir", prompt=True, help="Path to the local Harbor tasks directory"),
     agent: str = typer.Option("agents.instrumented_omp_agent:InstrumentedOmpAgent", "--agent", help="Agent module:Class"),
-    model: str = typer.Option("", "--model", help="Model id the suite targets (defaults to the provider's model)"),
+    model: str = typer.Option("", "--model", help="Optional benchmark model default; runs can override it"),
     expected_task_count: int = typer.Option(None, "--expected-task-count", help="Fail if the dir holds a different count"),
     smoke_tasks: str = typer.Option("", "--smoke-tasks", help="Comma-separated smoke subset"),
     tokenizer_repo: str = typer.Option("", "--tokenizer-repo", help="Pinned HF tokenizer repo"),

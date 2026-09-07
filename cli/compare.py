@@ -16,8 +16,8 @@ def compare(
     providers: list[str] = typer.Argument(..., metavar="PROVIDER", help="Providers to compare (two or more)"),
     smoke: bool = typer.Option(False, "--smoke", help="Run the smoke subset instead of the full suite"),
     execution: str = typer.Option("sequential", "--execution", help="sequential (official) or parallel (informal)"),
-    model: str | None = typer.Option(None, "--model", help="Override benchmark.model (must match config)"),
-    reasoning: str | None = typer.Option(None, "--reasoning", help="Reasoning mode"),
+    model: str | None = typer.Option(None, "--model", help="Per-run provider model override"),
+    reasoning: str | None = typer.Option(None, "--reasoning", help="Per-run reasoning mode"),
     concurrency: int | None = typer.Option(None, "--concurrency", min=1, help="Concurrent agent tasks"),
     trials: int | None = typer.Option(None, "--trials", min=1, help="Attempts per task"),
 ) -> None:

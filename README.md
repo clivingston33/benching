@@ -82,8 +82,8 @@ benching tokenizer prepare        download the pinned tokenizer
 benchmark:
   name: my-suite
   version: "1.0"
-  model: model-identifier            # canonical benchmark model
-  reasoning: default                 # default | enabled | disabled
+  model: model-identifier            # optional benchmark default; /model overrides it
+  reasoning: default                 # run default; /reasoning overrides it
   tasks_dir: ~/my-suite/tasks        # one subdirectory per task
   expected_task_count: 50            # full mode asserts this many tasks
   smoke_tasks: [task-a, task-b]      # quick subset for smoke mode
@@ -97,7 +97,7 @@ benchmark:
     env_override: TOKENIZER_PATH     # optional local override var
 ```
 
-Point `tasks_dir` at a directory whose subdirectories are tasks, set the canonical model and tokenizer, and the harness uses them everywhere (run metadata, validation, comparison compatibility).
+Point `tasks_dir` at a directory whose subdirectories are tasks. The optional model and reasoning values are defaults; each run may select a provider model and reasoning mode independently.
 
 ## Configure providers
 
@@ -127,12 +127,11 @@ Registered local suites overlay it when selected with `benching benchmark use`.
 
 ```bash
 python3 -m pip install -e .
-cp config/provider.env.example config/myprovider.env   # then fill in the key
-chmod 600 config/myprovider.env
-benching doctor                     # confirm the environment is ready
-benching tokenizer prepare          # cache the pinned tokenizer once
-benching provider validate myprovider
-benching run myprovider --smoke
+benching doctor
+benching tokenizer prepare
+benching provider add
+benching provider use myprovider
+benching run --smoke
 ```
 
 Smoke validates credentials, runs the smoke tasks, and produces a run under `runs/`.

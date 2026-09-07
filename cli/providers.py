@@ -7,10 +7,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from benchmark.config import benchmark_spec, enabled_providers, load_yaml, provider_env_values
-from benchmark.concurrency import probe_provider
+from benchmark.config import load_yaml, provider_env_values
 from benchmark.state import load_state
-from benchmark.validation import validate_provider, write_validation_report
 app = typer.Typer(help="Manage benchmark providers.", no_args_is_help=True)
 console = Console()
 
@@ -40,7 +38,7 @@ def list_providers() -> None:
     for name in sorted(providers):
         cfg = providers[name]
         status = _status_for(name, cfg)
-        table.add_row("*" if name == active else "", name, str(cfg.get("api_model") or ""), status, "yes" if cfg.get("enabled") else "no")
+        table.add_row("*" if name == active else "", name, str(cfg.get("default_model") or cfg.get("api_model") or ""), status, "yes" if cfg.get("enabled") else "no")
     console.print(table)
     if not providers:
         console.print("[yellow]No providers configured; run `benching provider add`.[/yellow]")
@@ -73,10 +71,15 @@ def add(
         return
     console.print("Testing connection...")
     try:
-        validate(name)
+        from benchmark.providers import validate_registered_provider
+
+        result, _ = validate_registered_provider(name)
     except SystemExit as exc:
         console.print(f"[yellow]Provider added but validation failed: {exc.code or exc}[/yellow]")
     else:
+        if not result["success"]:
+            console.print("[yellow]Provider added but validation failed[/yellow]")
+            return
         console.print("[green]✓ Authentication[/green]")
         console.print("[green]✓ Streaming response[/green]")
 
@@ -121,7 +124,7 @@ def edit(
     if base_url:
         changes["base_url"] = base_url
     if api_model:
-        changes["api_model"] = api_model
+        changes["default_model"] = api_model
     try:
         if changes:
             update_provider(name, **changes)
@@ -139,19 +142,14 @@ def edit(
 @app.command("validate")
 def validate(provider: str) -> None:
     """Validate a provider's credentials and streaming model access."""
-    from benchmark.benchmarks import active_root_config
+    from benchmark.providers import validate_registered_provider
 
-    root = active_root_config()
-    spec = benchmark_spec(root)
-    if provider not in enabled_providers(root):
-        raise typer.BadParameter(f"provider is not enabled: {provider}")
     console.print(f"Validating [bold]{provider}[/bold]...", end="")
     try:
-        result = validate_provider(provider, spec, root)
+        result, output = validate_registered_provider(provider)
     except SystemExit as exc:
         console.print(" [red]failed[/red]")
         raise typer.Exit(1) from exc
-    output = write_validation_report(provider, result)
     console.print(" [green]done[/green]")
     if not result["success"]:
         console.print(f"[red]Validation failed[/red] ({result['error_class']}); see {output}")
@@ -166,18 +164,14 @@ def probe(
     stages: str = typer.Option("2,3,5,6", help="Comma-separated concurrency levels to probe"),
 ) -> None:
     """Probe a provider's concurrency ceiling with staged concurrent streams."""
-    from benchmark.benchmarks import active_root_config
+    from benchmark.providers import probe_registered_provider
 
-    root = active_root_config()
-    spec = benchmark_spec(root)
-    if provider not in enabled_providers(root):
-        raise typer.BadParameter(f"provider is not enabled: {provider}")
     stage_values = tuple(int(value.strip()) for value in stages.split(",") if value.strip())
     if not stage_values:
         raise typer.BadParameter("--stages must contain at least one level")
     console.print(f"Probing [bold]{provider}[/bold] concurrency at {', '.join(map(str, stage_values))}...")
     try:
-        summary_path, jsonl_path = probe_provider(provider, spec, root, stages=stage_values)
+        summary_path, jsonl_path = probe_registered_provider(provider, stages=stage_values)
     except SystemExit as exc:
         raise typer.Exit(1) from exc
     summary = json.loads(summary_path.read_text(encoding="utf-8"))

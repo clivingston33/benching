@@ -71,7 +71,7 @@ def _merge_user_providers(root: dict[str, Any], yaml: Any) -> None:
 
 
 def benchmark_spec(config: dict[str, Any]) -> BenchmarkSpec:
-    """Build the immutable suite identity from the config dict."""
+    """Build benchmark task metadata; model/reasoning are defaults, not constraints."""
     settings = config.get("benchmark") if isinstance(config.get("benchmark"), dict) else {}
     tokenizer = settings.get("tokenizer") if isinstance(settings.get("tokenizer"), dict) else {}
     tasks_dir = Path(str(settings.get("tasks_dir", "") or "")).expanduser()
@@ -154,20 +154,24 @@ def provider_config(name: str, root_config: dict[str, Any] | None = None) -> tup
     return config, value
 
 
-def resolve(name: str, config: dict[str, Any], values: dict[str, str] | None = None) -> tuple[str, str]:
-    """Resolve ``(endpoint, api_model)`` for a provider.
+def resolve(
+    name: str,
+    config: dict[str, Any],
+    values: dict[str, str] | None = None,
+    model_override: str | None = None,
+) -> tuple[str, str]:
+    """Resolve the endpoint and selected provider model.
 
-    Env-file values ``<NAME>_BASE_URL`` / ``<NAME>_API_MODEL`` take
-    precedence over the YAML ``base_url`` / ``api_model`` keys.
+    Endpoint and model metadata live in the provider registry. Credential env
+    files intentionally contain secrets only; ``model_override`` is the
+    per-run/session model selection.
     """
-    values = values if values is not None else provider_env_values(name, config)
-    prefix = name.upper().replace("-", "_")
-    endpoint = values.get(f"{prefix}_BASE_URL") or config.get("base_url") or config.get("endpoint")
-    api_model = values.get(f"{prefix}_API_MODEL") or config.get("api_model")
+    endpoint = config.get("base_url") or config.get("endpoint")
+    api_model = model_override or config.get("default_model") or config.get("api_model")
     if not isinstance(endpoint, str) or not endpoint:
         raise SystemExit(f"endpoint unresolved for {name}")
     if not isinstance(api_model, str) or not api_model:
-        raise SystemExit(f"api_model unresolved for {name}")
+        raise SystemExit(f"default model unresolved for {name}")
     return endpoint.rstrip("/"), api_model
 
 

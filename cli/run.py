@@ -16,8 +16,8 @@ console = Console()
 def run(
     provider: str = typer.Argument(None, help="Provider to run (defaults to the active provider)"),
     smoke: bool = typer.Option(False, "--smoke", help="Run the quick smoke subset instead of the full suite"),
-    model: str | None = typer.Option(None, "--model", help="Override benchmark.model (must match config)"),
-    reasoning: str | None = typer.Option(None, "--reasoning", help="Reasoning mode"),
+    model: str | None = typer.Option(None, "--model", help="Per-run provider model override"),
+    reasoning: str | None = typer.Option(None, "--reasoning", help="Per-run reasoning mode"),
     concurrency: int | None = typer.Option(None, "--concurrency", min=1, help="Concurrent agent tasks"),
     trials: int | None = typer.Option(None, "--trials", min=1, help="Attempts per task"),
 ) -> None:

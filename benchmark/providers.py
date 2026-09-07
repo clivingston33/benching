@@ -15,7 +15,6 @@ from benchmark.state import providers_dir, providers_registry_path, update_state
 
 ENV_TEMPLATE = """# Credentials for {name} (chmod 600).
 {auth_env}={api_key}
-{prefix}_BASE_URL={base_url}
 """
 
 
@@ -62,11 +61,11 @@ def provider_entry(
         "env_file": str(providers_dir() / f"{name}.env"),
         "auth_env": auth_env,
         "base_url": base_url.rstrip("/"),
-        "api_model": api_model,
+        "default_model": api_model,
         "api": api,
         "strict_model_check": strict_model_check,
     }
-    return entry, ENV_TEMPLATE.format(name=name, auth_env=auth_env, api_key=api_key, prefix=name.upper().replace("-", "_"), base_url=base_url.rstrip("/"))
+    return entry, ENV_TEMPLATE.format(name=name, auth_env=auth_env, api_key=api_key)
 
 
 def add_provider(name: str, base_url: str, api_model: str, api_key: str, api: str = "openai-completions", strict_model_check: bool = False, make_active: bool = True) -> dict[str, Any]:
@@ -110,12 +109,12 @@ def remove_provider(name: str, forget_key_file: bool = True) -> None:
 
 
 def update_provider(name: str, **changes: Any) -> dict[str, Any]:
-    """Edit a provider's fields (base_url, api_model, api, strict_model_check)."""
+    """Edit provider metadata; credentials stay in its env file."""
     providers = _load_registry()
     if name not in providers:
         raise SystemExit(f"unknown provider: {name}")
     entry = providers[name]
-    editable = {"base_url", "api_model", "api", "strict_model_check", "plan", "plan_tier"}
+    editable = {"base_url", "default_model", "api", "strict_model_check", "plan", "plan_tier"}
     unknown = [key for key in changes if key not in editable]
     if unknown:
         raise SystemExit(f"cannot edit field(s): {', '.join(unknown)}")
@@ -140,6 +139,41 @@ def list_providers() -> list[dict[str, Any]]:
     merged = dict(load_yaml().get("providers") or {})
     return [{"name": name, "cfg": cfg} for name, cfg in sorted(merged.items())]
 
+
+
+def validate_registered_provider(
+    name: str,
+    root_config: dict[str, Any] | None = None,
+    model_override: str | None = None,
+) -> tuple[dict[str, Any], Path]:
+    """Validate a registered provider and persist its report."""
+    from benchmark.benchmarks import active_root_config
+    from benchmark.config import benchmark_spec, enabled_providers, provider_config
+    from benchmark.validation import validate_provider, write_validation_report
+
+    root = root_config or active_root_config()
+    if name not in enabled_providers(root):
+        raise SystemExit(f"provider is not enabled: {name}")
+    _, config = provider_config(name, root)
+    spec = benchmark_spec(root)
+    result = validate_provider(name, spec, root, config, model_override=model_override)
+    return result, write_validation_report(name, result)
+
+
+def probe_registered_provider(
+    name: str,
+    stages: tuple[int, ...] = (2, 3, 5, 6),
+    root_config: dict[str, Any] | None = None,
+) -> tuple[Path, Path]:
+    """Run the staged provider probe through the benchmark layer."""
+    from benchmark.benchmarks import active_root_config
+    from benchmark.config import benchmark_spec, enabled_providers
+    from benchmark.concurrency import probe_provider
+
+    root = root_config or active_root_config()
+    if name not in enabled_providers(root):
+        raise SystemExit(f"provider is not enabled: {name}")
+    return probe_provider(name, benchmark_spec(root), root, stages=stages)
 
 def rename_key_field(name: str, api_key: str) -> None:
     """Rotate a provider's API key (writes its credential file)."""

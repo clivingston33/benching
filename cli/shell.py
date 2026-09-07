@@ -45,15 +45,6 @@ def _err(message: str) -> None:
     console.print(f"[red]✗[/red] {message}")
 
 
-def _resolve_root_config(session: Session) -> dict:
-    from benchmark.benchmarks import active_root_config
-
-    return active_root_config()
-
-
-def _session_benchmark_name(session: Session) -> str | None:
-    return session.benchmark
-
 
 def cmd_provider(session: Session, args: list[str]) -> None:
     """/provider [use|add|remove|edit|validate|probe] — manage providers."""
@@ -97,9 +88,16 @@ def cmd_provider(session: Session, args: list[str]) -> None:
         session.provider = name
         _ok(f"Provider added: {name}")
         console.print("Testing connection...")
-        from cli.providers import validate
+        from benchmark.providers import validate_registered_provider
 
-        validate(name)
+        try:
+            result, report = validate_registered_provider(name)
+        except SystemExit as exc:
+            _err(str(exc.code or exc))
+            return
+        if not result["success"]:
+            _err(f"validation failed ({result.get('error_class', 'provider response')}); see {report}")
+            return
         _ok("Authentication")
         _ok("Streaming response")
         return
@@ -128,20 +126,34 @@ def cmd_provider(session: Session, args: list[str]) -> None:
                 _err(f"unknown provider: {name}")
                 return
             base_url = typer.prompt("Base URL", default=str(cfg.get("base_url") or ""))
-            model = typer.prompt("Model", default=str(cfg.get("api_model") or ""))
+            model = typer.prompt("Model", default=str(cfg.get("default_model") or cfg.get("api_model") or ""))
             api_key = getpass.getpass("API key (blank keeps current): ")
-            update_provider(name, base_url=base_url, api_model=model)
+            update_provider(name, base_url=base_url, default_model=model)
             if api_key:
                 rename_key_field(name, api_key)
             _ok(f"Provider updated: {name}")
         elif command == "validate":
-            from cli.providers import validate
+            from benchmark.providers import validate_registered_provider
 
-            validate(name)
+            try:
+                result, report = validate_registered_provider(name)
+            except SystemExit as exc:
+                _err(str(exc.code or exc))
+                return
+            if result["success"]:
+                _ok(f"Provider validated; report: {report}")
+            else:
+                _err(f"validation failed ({result.get('error_class', 'provider response')}); see {report}")
         else:
-            from cli.providers import probe
+            from benchmark.providers import probe_registered_provider
 
-            probe(name)
+            try:
+                summary_path, requests_path = probe_registered_provider(name)
+            except SystemExit as exc:
+                _err(str(exc.code or exc))
+                return
+            _ok(f"Probe summary: {summary_path}")
+            console.print(f"Requests: [cyan]{requests_path}[/cyan]")
         return
     _err("usage: /provider use NAME | add | remove NAME | edit NAME | validate NAME | probe NAME")
 
@@ -164,20 +176,27 @@ def cmd_providers(session: Session, args: list[str]) -> None:
 
         env = provider_env_values(name, cfg)
         status = "configured" if env.get(auth_env) else "missing credentials"
-        table.add_row(("* " if name == session.provider else "") + name, str(cfg.get("api_model") or ""), status)
+        table.add_row(("* " if name == session.provider else "") + name, str(cfg.get("default_model") or cfg.get("api_model") or ""), status)
     console.print(table)
 
 
 def cmd_model(session: Session, args: list[str]) -> None:
-    """/model [name] — show or set the model override."""
+    """/model [name] — show or set the per-run model."""
     if not args:
-        console.print(f"Model: [cyan]{session.model or '(benchmark default)'}[/cyan]")
+        if session.model:
+            console.print(f"Model: [cyan]{session.model}[/cyan] (session override)")
+            return
+        from benchmark.benchmarks import active_root_config
+
+        providers = active_root_config().get("providers") or {}
+        cfg = providers.get(session.provider) if session.provider else None
+        model = (cfg.get("default_model") or cfg.get("api_model")) if isinstance(cfg, dict) else None
+        console.print(f"Model: [cyan]{model or '(unset)'}[/cyan] (provider default)")
         return
     model = args[0]
     update_state(model=model)
     session.model = model
     _ok(f"Model: {model}")
-
 
 def cmd_benchmark(session: Session, args: list[str]) -> None:
     """/benchmark [use|add|remove|list|info] — manage benchmarks."""
@@ -292,7 +311,7 @@ def _build_run_options(session: Session, mode: str):
 def _run(session: Session, mode: str) -> None:
     from benchmark.benchmarks import active_root_config
     from benchmark.runner import run_one
-    from cli.live import drive_live_view
+    from benchmark.live import drive_live_view
 
     if not session.provider:
         _err("no active provider; /provider use NAME")
@@ -401,30 +420,76 @@ def cmd_compare(session: Session, args: list[str]) -> None:
 
 def cmd_runs(session: Session, args: list[str]) -> None:
     """/runs — list past runs."""
-    from cli.runs import list as runs_list
+    from rich.table import Table
 
-    runs_list()
+    from benchmark.runs import all_run_dirs, run_json, status
+
+    directories = all_run_dirs()
+    if not directories:
+        console.print("[yellow]No runs match.[/yellow]")
+        return
+    table = Table(title="Runs", show_header=True, header_style="bold")
+    table.add_column("RUN ID", style="bold")
+    table.add_column("PROVIDER")
+    table.add_column("MODEL")
+    table.add_column("STATUS")
+    for directory in directories:
+        run = run_json(directory) or {}
+        table.add_row(directory.name, str(run.get("provider", "?")), str(run.get("benchmark_model") or run.get("api_model") or "?"), status(directory))
+    console.print(table)
 
 
 def cmd_results(session: Session, args: list[str]) -> None:
     """/results [run_id|latest] — show results for a run."""
-    from cli.results import show as results_show
+    from benchmark.results import ensure_normalized
+    from benchmark.runs import duration_seconds, format_duration, run_json, status, task_counts
 
-    results_show(args[0] if args else "latest")
+    try:
+        directory, summary = ensure_normalized(args[0] if args else "latest")
+    except SystemExit as exc:
+        _err(str(exc.code or exc))
+        return
+    run = run_json(directory) or {}
+    counts = task_counts(directory)
+    console.print(f"[bold]{directory.name}[/bold]  {status(directory)}")
+    console.print(f"Model: {run.get('benchmark_model') or run.get('api_model') or '?'}")
+    console.print(f"Tasks: {counts['passed']} passed / {counts['failed']} failed / {counts['timed_out']} timed out ({format_duration(duration_seconds(directory))})")
+    if summary is not None:
+        reliability = summary.get("reliability") or {}
+        console.print(f"Success rate: {reliability.get('success_rate', '?')}")
+    else:
+        console.print("[yellow]No normalized metrics yet.[/yellow]")
 
 
 def cmd_doctor(session: Session, args: list[str]) -> None:
     """/doctor — environment health checks."""
-    from cli.doctor import check as doctor_check
+    from rich.table import Table
 
-    doctor_check()
+    from benchmark.doctor import checks
+
+    table = Table(title="benching environment", show_header=True, header_style="bold")
+    table.add_column("Check", style="bold")
+    table.add_column("Status")
+    table.add_column("Detail")
+    results = checks()
+    for item in results:
+        table.add_row(str(item["name"]), "[green]OK[/green]" if item["ok"] else "[red]MISSING[/red]", str(item["detail"]))
+    console.print(table)
 
 
 def cmd_config(session: Session, args: list[str]) -> None:
     """/config — show active configuration."""
-    from cli.config import show as config_show
+    from benchmark.benchmarks import active_root_config
+    from benchmark.config import benchmark_spec
+    from benchmark.providers import list_providers
 
-    config_show()
+    spec = benchmark_spec(active_root_config())
+    console.print(f"Benchmark: [cyan]{spec.display_name}[/cyan] · {spec.expected_task_count or '?'} tasks")
+    console.print(f"Model default: {spec.model or '(provider default)'} · reasoning default: {spec.reasoning}")
+    console.print(f"Active provider: {session.provider or 'unset'} · concurrency {session.concurrency} · trials {session.trials}")
+    for item in list_providers():
+        cfg = item["cfg"]
+        console.print(f"  {item['name']}: {cfg.get('default_model') or cfg.get('api_model') or '?'}")
 
 
 def cmd_help(session: Session, args: list[str]) -> None:
@@ -492,7 +557,13 @@ def _banner(session: Session) -> None:
             spec = benchmark_spec(load_yaml())
         bench_display = spec.display_name
         task_count = spec.expected_task_count or "?"
-        model = session.model or spec.model
+        if session.model:
+            model = session.model
+        else:
+            providers = (load_yaml().get("providers") or {})
+            cfg = providers.get(session.provider) if session.provider else None
+            model = (cfg.get("default_model") or cfg.get("api_model")) if isinstance(cfg, dict) else None
+            model = model or spec.model or "(unset)"
     except SystemExit:
         bench_display, task_count, model = bench_name, "?", "?"
     provider = session.provider or "no provider"
