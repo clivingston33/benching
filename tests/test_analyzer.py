@@ -83,6 +83,7 @@ def test_normalize_allows_different_tokenizers_without_local_metrics(tmp_path) -
         directories.append(directory)
     comparison = normalize_runs(directories, write_comparison=False)
     assert comparison["models"] == ["model-0", "model-1"]
+    assert comparison["tokenizers_comparable"] is False
     for directory in directories:
         row = json.loads((directory / "metrics.jsonl").read_text().splitlines()[0])
         assert row["timing"]["ttft_ms"]["value"] == 100.0
