@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import pytest
-from analytics.analyze import compatible, distribution, local_count, local_tokenizer, normalize
+from analytics.analyze import compatible, distribution, local_count, local_tokenizer, normalize, normalize_runs
 
 
 class FakeEncoding:
@@ -55,6 +56,38 @@ def test_truncated_output_makes_local_metrics_unavailable() -> None:
 def test_compatibility_allows_different_selected_models() -> None:
     common = {"benchmark": "task-suite", "benchmark_version": "1.0", "reasoning_mode": "default", "streaming": True, "concurrency": 1, "trials": 1, "proxy_schema_version": 1, "tokenizer": {"repo": None, "revision": None}, "tasks": ["task-1"]}
     compatible([{**common, "model": "model-a", "provider": "acme"}, {**common, "model": "model-b", "provider": "globex"}])
+
+
+def test_normalize_allows_different_tokenizers_without_local_metrics(tmp_path) -> None:
+    directories = []
+    for index, tokenizer in enumerate((("org/claude", "rev-a"), ("org/deepseek", "rev-b"))):
+        directory = tmp_path / f"run-{index}"
+        directory.mkdir()
+        (directory / "harbor").mkdir()
+        run = {
+            "run_id": f"run-{index}",
+            "benchmark": "task-suite",
+            "benchmark_version": "1.0",
+            "reasoning_mode": "default",
+            "streaming": True,
+            "concurrency": 1,
+            "trials": 1,
+            "proxy_schema_version": 1,
+            "tasks": ["task-1"],
+            "model": f"model-{index}",
+            "api_model": f"model-{index}",
+            "tokenizer": {"repo": tokenizer[0], "revision": tokenizer[1], "local_cache": str(tmp_path / f"missing-{index}")},
+        }
+        (directory / "run.json").write_text(json.dumps(run), encoding="utf-8")
+        (directory / "raw.jsonl").write_text(json.dumps(raw_row()) + "\n", encoding="utf-8")
+        directories.append(directory)
+    comparison = normalize_runs(directories, write_comparison=False)
+    assert comparison["tokenizers_comparable"] is False
+    for directory in directories:
+        row = json.loads((directory / "metrics.jsonl").read_text().splitlines()[0])
+        assert row["timing"]["ttft_ms"]["value"] == 100.0
+        assert row["tokens"]["output_provider"] == {"value": 50, "source": "reported"}
+        assert row["tokens"]["output_local"] == {"value": None, "source": "unavailable"}
 
 
 def test_compatibility_rejects_different_concurrency() -> None:

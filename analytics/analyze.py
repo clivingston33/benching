@@ -282,8 +282,6 @@ def compatible(runs: list[dict[str, Any]]) -> None:
         values_for_field = {json.dumps(run.get(field), sort_keys=True) for run in runs}
         if len(values_for_field) != 1:
             raise SystemExit(f"incompatible runs: {field}")
-    if len({tokenizer_identity(run) for run in runs}) != 1:
-        raise SystemExit("incompatible runs: tokenizer identity")
 
 def normalize_runs(run_paths: list[Path], execution: str = "sequential", write_comparison: bool = True, tokenizer_override: str | None = None) -> dict[str, Any]:
     """Normalize run telemetry into per-run metrics.jsonl.
@@ -296,15 +294,22 @@ def normalize_runs(run_paths: list[Path], execution: str = "sequential", write_c
     run_data = [read_json(path / "run.json") for path in run_paths]
     if len(run_data) > 1:
         compatible(run_data)
+    identities = {tokenizer_identity(run) for run in run_data}
+    tokenizers_comparable = tokenizer_override is not None or len(identities) <= 1
     tokenizer_path = tokenizer_override or next((tokenizer_path_from_run(run) for run in run_data if tokenizer_path_from_run(run)), None)
-    tokenizer = local_tokenizer(tokenizer_path)
+    shared_tokenizer = local_tokenizer(tokenizer_path) if tokenizers_comparable else None
     summaries = []
     for run_dir, run in zip(run_paths, run_data):
         raw = read_jsonl(run_dir / "raw.jsonl")
-        normalized = normalize(run, raw, tokenizer)
+        normalized = normalize(run, raw, shared_tokenizer)
         write_jsonl(run_dir / "metrics.jsonl", normalized)
         summaries.append(summarize(run, normalized, run_dir))
     benchmark_label = " ".join(part for part in (run_data[0].get("benchmark"), run_data[0].get("benchmark_version")) if part) or "unknown"
+    comparison_tokenizer = (
+        run_data[0].get("tokenizer") or {"repo": None, "revision": None, "local_cache": tokenizer_path, "source": "unavailable"}
+        if tokenizers_comparable
+        else {"source": "non-comparable", "identities": sorted(identities, key=lambda identity: json.dumps(identity))}
+    )
     comparison = {
         "schema_version": 1,
         "created_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
@@ -312,7 +317,8 @@ def normalize_runs(run_paths: list[Path], execution: str = "sequential", write_c
         "model": run_data[0].get("model") or run_data[0].get("api_model"),
         "provider_execution_mode": execution,
         "official_comparison": execution == "sequential",
-        "tokenizer": run_data[0].get("tokenizer") or {"repo": None, "revision": None, "local_cache": tokenizer_path, "source": "unavailable"},
+        "tokenizer": comparison_tokenizer,
+        "tokenizers_comparable": tokenizers_comparable,
         "formulas": {
             "ttft_ms": "first_content_output - request_started",
             "decode_duration_ms": "last_content_output - first_content_output",
