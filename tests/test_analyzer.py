@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from analytics.analyze import compatible, distribution, local_count, local_tokenizer, normalize
 
 
@@ -54,6 +55,12 @@ def test_truncated_output_makes_local_metrics_unavailable() -> None:
 def test_compatibility_allows_different_selected_models() -> None:
     common = {"benchmark": "task-suite", "benchmark_version": "1.0", "reasoning_mode": "default", "streaming": True, "concurrency": 1, "trials": 1, "proxy_schema_version": 1, "tokenizer": {"repo": None, "revision": None}, "tasks": ["task-1"]}
     compatible([{**common, "model": "model-a", "provider": "acme"}, {**common, "model": "model-b", "provider": "globex"}])
+
+
+def test_compatibility_rejects_different_concurrency() -> None:
+    common = {"benchmark": "task-suite", "benchmark_version": "1.0", "reasoning_mode": "default", "streaming": True, "trials": 1, "proxy_schema_version": 1, "tokenizer": {"repo": None, "revision": None}, "tasks": ["task-1"]}
+    with pytest.raises(SystemExit, match="incompatible runs: concurrency"):
+        compatible([{**common, "concurrency": 1}, {**common, "concurrency": 3}])
 
 
 def test_local_tokenizer_override_counts_exact_tokens(tmp_path) -> None:

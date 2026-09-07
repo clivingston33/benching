@@ -203,6 +203,7 @@ def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) ->
     monkeypatch.setattr(runner, "provider_config", lambda name, root_config=None: (root, root["providers"]["acme"]))
 
     monkeypatch.setattr(runner.subprocess, "run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runner, "version", lambda name: None)
 
     from benchmark.status import ProgressEvent
 
