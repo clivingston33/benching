@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "run_id": "bench-v1-fireworks-full-20260102-030405-ab12cd34",
+  "created_at_utc": "2026-01-02T03:04:05Z",
+  "benchmark": {
+    "name": "terminal-bench",
+    "version": "2.1",
+    "task_count": 89
+  },
+  "provider": {
+    "id": "fireworks",
+    "name": "Fireworks"
+  },
+  "model": "accounts/fireworks/models/deepseek-v4",
+  "reasoning": "default",
+  "execution": {
+    "concurrency": 3,
+    "trials": 1
+  },
+  "score": {
+    "value": 0.606742,
+    "passed": 54,
+    "failed": 35,
+    "total": 89,
+    "success_rate": 0.606742,
+    "errored": 0,
+    "timeout": 0
+  },
+  "speed": {
+    "decode_tps": {
+      "count": 1234,
+      "mean": 72.4,
+      "median": 68.1,
+      "p50": 68.1,
+      "p95": 105.2
+    },
+    "effective_tps": {
+      "count": 1234,
+      "mean": 70.8,
+      "median": 66.3,
+      "p50": 66.3,
+      "p95": 101.9
+    },
+    "output_tps_mean": 72.4,
+    "output_tps_p50": 68.1,
+    "output_tps_p95": 105.2
+  },
+  "latency": {
+    "ttft_ms": {
+      "count": 1234,
+      "mean": 820.0,
+      "median": 760.0,
+      "p50": 760.0,
+      "p95": 1450.0
+    },
+    "decode_duration_ms": {
+      "count": 1234,
+      "mean": 2200.0,
+      "median": 1900.0,
+      "p50": 1900.0,
+      "p95": 4300.0
+    },
+    "end_to_end_latency_ms": {
+      "count": 1234,
+      "mean": 3020.0,
+      "median": 2660.0,
+      "p50": 2660.0,
+      "p95": 5750.0
+    },
+    "ttft_ms_mean": 820.0,
+    "ttft_ms_p50": 760.0,
+    "ttft_ms_p95": 1450.0
+  },
+  "reliability": {
+    "successful_requests": 1234,
+    "failed_requests": 7,
+    "success_rate": 0.99436,
+    "request_success_rate": 0.99436,
+    "stream_completion_rate": 0.995,
+    "http_error_rate": 0.004,
+    "timeout_rate": 0.001,
+    "provider_failures": 3,
+    "downstream_cancellations": 1,
+    "incomplete_provider_streams": 3,
+    "errors": 7
+  },
+  "tokens": {
+    "input": 2860000,
+    "output": 3190000,
+    "input_provider": 2860000,
+    "output_provider": 3190000,
+    "total_provider": 6050000,
+    "cache_read": 112700000,
+    "cache_write": 2400000,
+    "output_local": null
+  },
+  "tasks": [
+    {
+      "task_id": "break-filter-js-from-html",
+      "trial_id": "trial-1",
+      "request_id": "req-001",
+      "success": true,
+      "stream_completed": true,
+      "timing": {
+        "ttft_ms": {"value": 760.0, "source": "measured"},
+        "decode_tps": {"value": null, "source": "unavailable"}
+      },
+      "tokens": {
+        "output_provider": {"value": 2600, "source": "reported"},
+        "output_local": {"value": null, "source": "unavailable"}
+      },
+      "reliability": {"success": true, "timeout": false}
+    },
+    {
+      "task_id": "cancel-async-tasks",
+      "trial_id": "trial-1",
+      "request_id": "req-002",
+      "success": false,
+      "stream_completed": false,
+      "timing": {
+        "ttft_ms": {"value": null, "source": "unavailable"},
+        "decode_tps": {"value": null, "source": "unavailable"}
+      },
+      "tokens": {
+        "output_provider": {"value": null, "source": "unavailable"},
+        "output_local": {"value": null, "source": "unavailable"}
+      },
+      "reliability": {"success": false, "timeout": true}
+    }
+  ]
+}
