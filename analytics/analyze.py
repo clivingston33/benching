@@ -305,6 +305,7 @@ def normalize_runs(run_paths: list[Path], execution: str = "sequential", write_c
         write_jsonl(run_dir / "metrics.jsonl", normalized)
         summaries.append(summarize(run, normalized, run_dir))
     benchmark_label = " ".join(part for part in (run_data[0].get("benchmark"), run_data[0].get("benchmark_version")) if part) or "unknown"
+    models = list(dict.fromkeys(run.get("model") or run.get("api_model") for run in run_data if run.get("model") or run.get("api_model")))
     comparison_tokenizer = (
         run_data[0].get("tokenizer") or {"repo": None, "revision": None, "local_cache": tokenizer_path, "source": "unavailable"}
         if tokenizers_comparable
@@ -314,7 +315,7 @@ def normalize_runs(run_paths: list[Path], execution: str = "sequential", write_c
         "schema_version": 1,
         "created_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "benchmark": benchmark_label,
-        "model": run_data[0].get("model") or run_data[0].get("api_model"),
+        "models": models,
         "provider_execution_mode": execution,
         "official_comparison": execution == "sequential",
         "tokenizer": comparison_tokenizer,
