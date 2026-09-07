@@ -1,22 +1,22 @@
 "use client";
 
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import { comparisons, fmtRunLabel, runDates, type RunSelection } from "@/lib/benchmark-data";
+import { comparisonOptions, runOptions, type RunSelection } from "@/lib/benchmark-data";
 
 interface RunSelectionValue {
   selection: RunSelection;
   setSelection: (selection: RunSelection) => void;
-  dates: string[];
+  comparisons: typeof comparisonOptions;
+  runs: typeof runOptions;
   label: string;
 }
 
 const RunSelectionContext = createContext<RunSelectionValue | null>(null);
 
 export function RunSelectionProvider({ children }: { children: ReactNode }) {
-  const [selection, setSelection] = useState<RunSelection>("all");
-  const dates = useMemo(() => runDates, []);
-  const label = comparisons.find((item) => item.id === selection)?.label ?? `${fmtRunLabel(selection)} run`;
-  const value = useMemo(() => ({ selection, setSelection, dates, label }), [selection, dates, label]);
+  const [selection, setSelection] = useState<RunSelection>(comparisonOptions[0]?.selection ?? "");
+  const label = comparisonOptions.find((item) => item.selection === selection)?.label ?? runOptions.find((item) => item.selection === selection)?.label ?? "No artifact selected";
+  const value = useMemo(() => ({ selection, setSelection, comparisons: comparisonOptions, runs: runOptions, label }), [selection, label]);
   return <RunSelectionContext.Provider value={value}>{children}</RunSelectionContext.Provider>;
 }
 
@@ -25,5 +25,3 @@ export function useRunSelection(): RunSelectionValue {
   if (!value) throw new Error("useRunSelection must be used within RunSelectionProvider");
   return value;
 }
-
-export const fmtDate = fmtRunLabel;
