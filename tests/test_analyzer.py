@@ -83,6 +83,12 @@ def test_normalize_allows_different_tokenizers_without_local_metrics(tmp_path) -
         directories.append(directory)
     comparison = normalize_runs(directories, write_comparison=False)
     assert comparison["models"] == ["model-0", "model-1"]
+    assert comparison["benchmark"] == {"name": "task-suite", "version": "1.0"}
+    assert comparison["run_ids"] == ["run-0", "run-1"]
+    assert comparison["execution_mode"] == "sequential"
+    assert comparison["official_comparison"] is True
+    assert comparison["runs"][0]["schema_version"] == 1
+    assert set(comparison["runs"][0]) == set(json.loads((directories[0] / "summary.json").read_text(encoding="utf-8")))
     assert comparison["tokenizers_comparable"] is False
     for directory in directories:
         row = json.loads((directory / "metrics.jsonl").read_text().splitlines()[0])

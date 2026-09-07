@@ -166,6 +166,10 @@ summary.json             stable dashboard-facing run summary
 
 `benching runs` lists these; `benching results show` reads them. Run-id prefixes and `latest` resolve automatically.
 
+Comparison artifacts under `runs/comparison-*.json` use schema version 1 and
+contain benchmark identity, run IDs, selected models, execution mode,
+tokenizer comparability, and embedded `summary.json` documents.
+
 ## Metric definitions
 
 ```text

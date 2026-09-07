@@ -410,32 +410,23 @@ def normalize_runs(run_paths: list[Path], execution: str = "sequential", write_c
         raw = read_jsonl(run_dir / "raw.jsonl")
         normalized = normalize(run, raw, shared_tokenizer)
         write_jsonl(run_dir / "metrics.jsonl", normalized)
-        write_summary(run_dir / "summary.json", build_summary(run, normalized, run_dir))
-        summaries.append(summarize(run, normalized, run_dir))
-    benchmark_label = " ".join(part for part in (run_data[0].get("benchmark"), run_data[0].get("benchmark_version")) if part) or "unknown"
-    models = list(dict.fromkeys(run.get("model") or run.get("api_model") for run in run_data if run.get("model") or run.get("api_model")))
-    comparison_tokenizer = (
-        run_data[0].get("tokenizer") or {"repo": None, "revision": None, "local_cache": tokenizer_path, "source": "unavailable"}
-        if tokenizers_comparable
-        else {"source": "non-comparable", "identities": sorted(identities, key=lambda identity: json.dumps(identity))}
-    )
+        summary = build_summary(run, normalized, run_dir)
+        write_summary(run_dir / "summary.json", summary)
+        summaries.append(summary)
+    benchmark = {
+        "name": run_data[0].get("benchmark"),
+        "version": run_data[0].get("benchmark_version"),
+    }
+    models = list(dict.fromkeys(summary["model"] for summary in summaries if summary.get("model")))
     comparison = {
         "schema_version": 1,
         "created_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        "benchmark": benchmark_label,
+        "benchmark": benchmark,
+        "run_ids": [summary["run_id"] for summary in summaries],
         "models": models,
-        "provider_execution_mode": execution,
+        "execution_mode": execution,
         "official_comparison": execution == "sequential",
-        "tokenizer": comparison_tokenizer,
         "tokenizers_comparable": tokenizers_comparable,
-        "formulas": {
-            "ttft_ms": "first_content_output - request_started",
-            "decode_duration_ms": "last_content_output - first_content_output",
-            "end_to_end_latency_ms": "stream_completed - request_started",
-            "decode_tps": "output_tokens_local / decode_duration_seconds",
-            "effective_tps": "output_tokens_local / end_to_end_latency_seconds",
-            "cv": "standard_deviation / mean",
-        },
         "runs": summaries,
     }
     if write_comparison:
