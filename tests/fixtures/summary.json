@@ -20,11 +20,11 @@
   "score": {
     "value": 0.606742,
     "passed": 54,
-    "failed": 35,
+    "failed": 34,
     "total": 89,
     "success_rate": 0.606742,
     "errored": 0,
-    "timeout": 0
+    "timeout": 1
   },
   "speed": {
     "decode_tps": {

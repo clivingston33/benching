@@ -191,7 +191,7 @@ def test_task_timeout_is_represented_in_summary() -> None:
     summary = summary_fixture()
     timeout_tasks = [task for task in summary["tasks"] if task["timeout"]]
     assert timeout_tasks
-    assert summary["score"]["timeout"] == 0
+    assert summary["score"]["timeout"] == 1
 
 
 def test_smoke_run_summary() -> None:
