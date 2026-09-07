@@ -12,7 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from benchmark._paths import CACHE_ROOT, CONFIG, ROOT, RUNS
+from benchmark._paths import CACHE_ROOT, CONFIG, ROOT
+from benchmark.state import providers_registry_path
 
 
 @dataclass(frozen=True)
@@ -38,16 +39,35 @@ class BenchmarkSpec:
         return f"{self.name} {self.version}".strip()
 
 
-def load_yaml() -> dict[str, Any]:
-    """Load and validate config/benchmark.yaml as a plain dict."""
+def load_yaml(path: Path | None = None) -> dict[str, Any]:
+    """Load and validate a benchmark config file as a plain dict.
+
+    Defaults to the repo's config/benchmark.yaml with the user provider
+    registry (~/.config/benching/providers.yaml) merged on top.
+    """
     try:
         import yaml
     except ImportError as exc:
         raise SystemExit("PyYAML is required; install the project dependencies first") from exc
-    value = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    target = path or CONFIG
+    value = yaml.safe_load(target.read_text(encoding="utf-8"))
     if not isinstance(value, dict) or not isinstance(value.get("benchmark"), dict):
-        raise SystemExit("invalid config/benchmark.yaml")
+        raise SystemExit(f"invalid benchmark config: {target}")
+    if path is None:
+        _merge_user_providers(value, yaml)
     return value
+
+
+def _merge_user_providers(root: dict[str, Any], yaml: Any) -> None:
+    """Overlay user-registered providers on the repo registry."""
+    registry = providers_registry_path()
+    if not registry.is_file():
+        return
+    user = yaml.safe_load(registry.read_text(encoding="utf-8")) or {}
+    providers = user.get("providers") if isinstance(user, dict) else None
+    if isinstance(providers, dict):
+        merged = root.setdefault("providers", {})
+        merged.update({name: cfg for name, cfg in providers.items() if isinstance(cfg, dict)})
 
 
 def benchmark_spec(config: dict[str, Any]) -> BenchmarkSpec:

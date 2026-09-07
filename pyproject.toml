@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "benching"
-version = "0.1.0"
+version = "0.2.0"
 description = "Benchmark LLM API providers against terminal-agent task suites"
 requires-python = ">=3.12"
 dependencies = [
@@ -13,6 +13,7 @@ dependencies = [
   "huggingface_hub>=0.34,<2",
   "typer>=0.12,<1",
   "rich>=13.0,<15",
+  "prompt_toolkit>=3.0,<4",
 ]
 
 [project.scripts]

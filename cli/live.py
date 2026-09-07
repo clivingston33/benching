@@ -1,7 +1,7 @@
 """Shared live run view driver.
 
-Renders the in-place progress view for both real runs (``benching run``)
-and the synthetic demo (``benching demo``). Consumes structured
+Renders the in-place progress view for real runs (``benching run``).
+Consumes structured
 :class:`ProgressEvent` objects from a queue and reconciles task counters
 against harbor result.json files when a run directory is present.
 """

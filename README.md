@@ -2,32 +2,36 @@
 
 Benchmark LLM API providers against terminal-agent task suites: run a task suite against one or more OpenAI-compatible providers behind a telemetry proxy, and compare latency, throughput, reliability, and task pass rates.
 
-Suite and provider identity live entirely in `config/benchmark.yaml`; nothing in the code is specific to any one benchmark or provider.
+The repo keeps the default benchmark manifest in `config/benchmark.yaml`. User state, registered providers, credentials, and local benchmark manifests live under `~/.config/benching/` so normal CLI use does not rewrite the repository config.
 
 ## Layout
 
 ```text
 cli/                       Typer command layer (thin: parse, call, render)
   app.py                   benching app + entry point
+  shell.py                 interactive slash-command shell
   doctor.py                benching doctor
   config.py                benching config
-  providers.py             benching provider
+  providers.py             provider management
+  benchmarks.py            benchmark registry management
   runs.py                  benching runs
   results.py               benching results
   tokenizer.py             benching tokenizer
   run.py, compare.py       benching run / compare leaf commands
-benchmark/                 execution layer (importable by a dashboard)
-  config.py                suite identity + provider registry from config
+benchmark/                 execution and registry layers
+  config.py                suite identity + merged provider config
+  state.py                 persistent user defaults
+  providers.py             provider registry mutations
+  benchmarks.py             local benchmark manifests
   runner.py                run orchestration, harbor command, proxy lifecycle
-  validation.py            provider preflight
-  concurrency.py           staged concurrency probe
-  tokenizer.py             pinned tokenizer cache
+  validation.py             provider preflight
+  concurrency.py            staged concurrency probe
+  tokenizer.py              pinned tokenizer cache
   _paths.py                shared repo/runtime paths
 proxy/telemetry_proxy.py   OpenAI-compatible streaming proxy; per-run JSONL telemetry
 analytics/analyze.py       normalize telemetry; build metrics.jsonl + comparison JSON
 agents/instrumented_omp_agent.py  Harbor agent driving OMP through the proxy
-config/benchmark.yaml      benchmark suite identity + provider registry
-config/provider.env.example  template for a provider credential file
+config/benchmark.yaml      default benchmark suite identity
 ```
 
 The CLI modules contain almost no benchmark logic: they parse arguments, call the `benchmark/` layer, and render results. A dashboard can import the same `benchmark/` functions.
@@ -41,29 +45,31 @@ The CLI modules contain almost no benchmark logic: they parse arguments, call th
 ## Commands
 
 ```text
-benching doctor                    environment health checks
-benching config show               suite identity + provider registry
+benching                         interactive shell
+benching doctor                  environment health checks
+benching config show             active suite, providers, and user defaults
 
-benching provider list             providers with model + credential status
-benching provider validate <name>  credentials + streaming model access
-benching provider probe <name>     concurrency ceiling probe
+benching provider list           providers with model + credential status
+benching provider add            interactively register and validate a provider
+benching provider remove <name>  remove a provider and its credential file
+benching provider use <name>     persist the active provider
+benching provider edit <name>    update URL, model, or API key
+benching provider validate <name>
+benching provider probe <name>
 
-benching run <provider>            run the full suite
-benching run <provider> --smoke    run the quick smoke subset
-benching run <provider> --concurrency 3
+benching benchmark list          registered local Harbor suites
+benching benchmark add           register a local task directory
+benching benchmark remove <name>
+benching benchmark use <name>    persist the active benchmark
+benching benchmark info <name>
 
-benching compare <a> <b>           run both, build comparison
-benching compare <a> <b> --execution parallel
+benching run [provider]           run the full suite
+benching run [provider] --smoke   run the quick smoke subset
+benching compare <a> <b>          run both, build comparison
 
-benching runs                      list runs, newest first
-benching runs show <run-id>        run config (prefix or 'latest' accepted)
-benching runs latest
-
-benching results show <run-id>     latency / reliability / task tables
-benching results latest
-
-benching tokenizer prepare         download the pinned tokenizer
-benching tokenizer status          cached?
+benching runs                     list runs, newest first
+benching results latest           show the latest result
+benching tokenizer prepare        download the pinned tokenizer
 ```
 
 `--help` is available at every level.
@@ -95,36 +101,27 @@ Point `tasks_dir` at a directory whose subdirectories are tasks, set the canonic
 
 ## Configure providers
 
-Enable one or more providers under `providers:` in `config/benchmark.yaml`:
+Interactive provider management writes:
 
-```yaml
-providers:
-  myprovider:
-    enabled: true
-    env_file: config/myprovider.env
-    auth_env: MYPROVIDER_API_KEY
-    base_url: https://api.myprovider.com/v1
-    api_model: provider-specific-model-id
-    api: openai-completions
-    strict_model_check: false
-    plan: null
-    plan_tier: unknown
-    routing_entitlement: null
-    benchmark_concurrency_limit: null
+```text
+~/.config/benching/
+  config.yaml                 active provider/benchmark and run defaults
+  providers.yaml              provider metadata (no keys)
+  providers/<name>.env        credentials, mode 600 where supported
+  benchmarks/<name>.yaml      local BenchmarkSpec manifests
 ```
 
-Create the matching credential file from the template:
+Add and activate a provider without editing YAML:
 
 ```bash
-cp config/provider.env.example config/myprovider.env
-chmod 600 config/myprovider.env
-# set MYPROVIDER_API_KEY (and optionally MYPROVIDER_BASE_URL / MYPROVIDER_API_MODEL,
-# which override base_url / api_model)
+benching provider add
+benching provider list
+benching provider validate <name>
+benching provider use <name>
 ```
 
-`<NAME>_BASE_URL` and `<NAME>_API_MODEL` in the env file override the YAML values; the YAML `auth_env` names the key the harness reads.
-
-No code changes are needed; enabled providers are picked up automatically by `provider list` / `provider validate` / `provider probe`, `run`, and `compare`. Set `strict_model_check: true` to require `api_model` in the provider's `/models` catalog during validation.
+The repository `config/benchmark.yaml` remains the fallback suite manifest.
+Registered local suites overlay it when selected with `benching benchmark use`.
 
 ## Quickstart
 

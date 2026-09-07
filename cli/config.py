@@ -5,7 +5,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from benchmark.config import benchmark_spec, enabled_providers, load_yaml
+from benchmark.config import benchmark_spec
+from benchmark.state import load_state
 
 app = typer.Typer(help="Inspect benching configuration.", no_args_is_help=True)
 console = Console()
@@ -13,8 +14,10 @@ console = Console()
 
 @app.command()
 def show() -> None:
-    """Show the benchmark suite and provider registry."""
-    root = load_yaml()
+    """Show the active benchmark, providers, and user defaults."""
+    from benchmark.benchmarks import active_root_config
+
+    root = active_root_config()
     spec = benchmark_spec(root)
 
     suite = Table(title="Benchmark suite", show_header=False, box=None)
@@ -40,7 +43,22 @@ def show() -> None:
     providers.add_column("Enabled")
     providers.add_column("Model")
     providers.add_column("Base URL")
-    for name in sorted(enabled_providers(root) + [name for name in (root.get("providers") or {}) if name not in enabled_providers(root)]):
+    for name in sorted((root.get("providers") or {})):
         cfg = root["providers"][name]
         providers.add_row(name, "yes" if cfg.get("enabled") else "no", str(cfg.get("api_model") or ""), str(cfg.get("base_url") or ""))
     console.print(providers)
+
+    state = load_state()
+    user = Table(title="User defaults", show_header=False, box=None)
+    user.add_column("Key", style="bold")
+    user.add_column("Value")
+    for key, value in (
+        ("Active provider", state.active_provider or "unset"),
+        ("Active benchmark", state.active_benchmark or "repo default"),
+        ("Model override", state.model or "benchmark default"),
+        ("Concurrency", str(state.concurrency)),
+        ("Trials", str(state.trials)),
+        ("Reasoning", state.reasoning),
+    ):
+        user.add_row(key, value)
+    console.print(user)
