@@ -154,21 +154,33 @@ Smoke validates credentials, runs the smoke tasks, and produces a run under `run
 Each run is isolated under `runs/<run-id>/`:
 
 ```text
-run.json                 immutable run configuration and fingerprint
+run.json                 immutable execution metadata and fingerprint
 status.json              lifecycle status
 command.json             exact runner command
 proxy-routes.json        trusted upstream routing configuration
-raw.jsonl                proxy telemetry and captured debug data
-metrics.jsonl            normalized analytical records
-summary.json             stable dashboard-facing run summary
+raw.jsonl                raw proxy telemetry
+metrics.jsonl            normalized request-level analytics
+summary.json             self-contained dashboard run contract
 *.log                    runner and proxy logs
 ```
 
-`benching runs` lists these; `benching results show` reads them. Run-id prefixes and `latest` resolve automatically.
+`run.json` is immutable execution metadata. `raw.jsonl` preserves proxy
+telemetry as captured. `metrics.jsonl` is the detailed normalized
+request-level analytics artifact. `summary.json` is intentionally
+self-contained for external consumers: it contains run-level metrics, context
+buckets, and one aggregated outcome per benchmark task/trial, including
+Harbor verifier fields and telemetry aggregates. It does not replace
+`metrics.jsonl`.
 
-Comparison artifacts under `runs/comparison-*.json` use schema version 1 and
-contain benchmark identity, run IDs, selected models, execution mode,
-tokenizer comparability, and embedded `summary.json` documents.
+Comparison artifacts under `runs/comparison-*.json` are the canonical
+multi-run contract. They use schema version 1 and contain benchmark identity,
+run IDs, selected models, execution mode, tokenizer comparability, and
+embedded completed `summary.json` documents. Provider-specific comparison
+fields do not belong in this artifact.
+
+Schema version 1 is retained: the canonical summary/comparison artifacts were
+introduced in the current release line, so task-level aggregation and context
+buckets complete that contract without a second externally released schema.
 
 ## Metric definitions
 
