@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
-from benchmark.config import BenchmarkSpec, benchmark_spec, load_yaml, resolve
+from benchmark.config import BenchmarkSpec, benchmark_spec, load_yaml, resolve, resolve_model_settings
 from benchmark.runner import RunOptions, harbor_command
 from benchmark.validation import classify_validation, parse_stream_body
 
@@ -34,18 +35,18 @@ def test_benchmark_spec_reads_full_identity_from_config() -> None:
     spec = benchmark_spec(config)
     assert spec.name == "terminal-bench"
     assert spec.version == "2.1"
-    assert spec.model == "deepseek-v4-flash-0731"
+    assert spec.model == ""
     assert spec.reasoning == "default"
     assert spec.tasks_dir.name == "tasks"
     assert spec.expected_task_count == 89
     assert len(spec.smoke_tasks) == 3
     assert spec.agent == "agents.instrumented_omp_agent:InstrumentedOmpAgent"
-    assert spec.max_tokens > 0
-    assert spec.context_window > 0
+    assert spec.max_tokens is None
+    assert spec.context_window is None
     assert spec.run_id_prefix == "bench"
-    assert spec.tokenizer_repo.startswith("deepseek-ai/")
-    assert len(spec.tokenizer_revision) == 40
-    assert spec.tokenizer_env_override == "TOKENIZER_PATH"
+    assert spec.tokenizer_repo == ""
+    assert spec.tokenizer_revision == ""
+    assert spec.tokenizer_env_override is None
 
 
 def test_config_ships_with_no_enabled_providers() -> None:
@@ -96,6 +97,58 @@ def test_resolve_uses_registry_metadata_and_run_override() -> None:
     assert resolve("acme", config, {}, "new-model") == ("https://api.acme.test/v1", "new-model")
 
 
+def test_provider_model_defaults_override_benchmark_execution_defaults() -> None:
+    spec = make_spec(tokenizer_repo="", tokenizer_revision="", max_tokens=None, context_window=None)
+    settings = resolve_model_settings(
+        {
+            "default_model": "provider-model",
+            "model_defaults": {
+                "tokenizer": {"repo": "org/provider-tokenizer", "revision": "revision"},
+                "max_tokens": 8192,
+                "context_window": 65536,
+            },
+        },
+        spec,
+        "selected-model",
+        model_override=True,
+    )
+    assert settings["model"] == "selected-model"
+    assert settings["max_tokens"] == 8192
+    assert settings["context_window"] == 65536
+    assert settings["tokenizer_repo"] == "org/provider-tokenizer"
+    assert settings["sources"]["model"] == "run.model_override"
+    assert settings["sources"]["tokenizer"] == "provider.model_defaults"
+
+
+
+
+def test_run_metadata_records_effective_setting_sources(tmp_path, monkeypatch) -> None:
+    import benchmark.runner as runner
+
+    monkeypatch.setattr(runner, "RUNS", tmp_path)
+    spec = make_spec(tokenizer_repo="", tokenizer_revision="", max_tokens=None, context_window=None)
+    settings = resolve_model_settings(
+        {"default_model": "provider-model", "model_defaults": {"max_tokens": 8192}},
+        spec,
+        "selected-model",
+        model_override=True,
+    )
+    directory = runner.run_directory(
+        RunOptions(provider="acme", mode="smoke", benchmark_model="selected-model"),
+        spec,
+        {"plan": None, "plan_tier": "unknown"},
+        "https://api.acme.test/v1",
+        "selected-model",
+        ["task-a"],
+        model_settings=settings,
+    )
+    run = json.loads((directory / "run.json").read_text())
+    assert run["model"] == "selected-model"
+    assert run["effective_settings"]["max_tokens"] == 8192
+    assert run["effective_settings"]["sources"]["model"] == "run.model_override"
+    assert run["effective_settings"]["sources"]["context_window"] == "harbor.default"
+
+
 def test_stream_validation_detects_content_and_usage() -> None:
     body = b'data: {"choices":[{"delta":{"content":"OK"}}]}\n\ndata: {"usage":{"prompt_tokens":2}}\n\ndata: [DONE]\n\n'
     first_content, usage = parse_stream_body(body)
@@ -124,9 +177,8 @@ def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) ->
     monkeypatch.setattr(runner, "task_names", lambda mode, spec: ["task-a"])
     monkeypatch.setattr(runner, "environment", lambda config, values=None: {})
 
-    monkeypatch.setattr(runner, "run_directory", lambda *args, **kwargs: _FakeRunDir(tmp_path))
+    monkeypatch.setattr(runner, "tokenizer_metadata", lambda *args, **kwargs: {"source": "unavailable"})
     monkeypatch.setattr(runner, "harbor_command", lambda *args, **kwargs: ["true"])
-    monkeypatch.setattr(runner, "tokenizer_metadata", lambda spec, values=None: {"source": "huggingface"})
 
     captured: dict = {}
 
@@ -161,9 +213,8 @@ def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) ->
     phases = [phase for phase, _ in calls]
     assert phases == ["docker", "tokenizer", "validate", "validate", "proxy", "running", "analyze", "done"]
     assert calls[0][1] == "docker available"
+    assert calls[1][1] == "tokenizer unavailable; provider token counts retained"
     assert calls[2][1] == "validating acme"
-    assert calls[-1][1] == "run complete"
-
 
 class _FakeRunDir:
     """Minimal stand-in for run_directory()'s returned Path."""

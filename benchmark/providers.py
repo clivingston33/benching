@@ -114,7 +114,7 @@ def update_provider(name: str, **changes: Any) -> dict[str, Any]:
     if name not in providers:
         raise SystemExit(f"unknown provider: {name}")
     entry = providers[name]
-    editable = {"base_url", "default_model", "api", "strict_model_check", "plan", "plan_tier"}
+    editable = {"base_url", "default_model", "model_defaults", "api", "strict_model_check", "plan", "plan_tier"}
     unknown = [key for key in changes if key not in editable]
     if unknown:
         raise SystemExit(f"cannot edit field(s): {', '.join(unknown)}")

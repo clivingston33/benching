@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from analytics.analyze import compatible, distribution, local_count, local_tokenizer, normalize
 
 
@@ -53,15 +51,9 @@ def test_truncated_output_makes_local_metrics_unavailable() -> None:
     assert normalized["timing"]["decode_tps"] == {"value": None, "source": "unavailable"}
 
 
-def test_compatibility_allows_different_api_model_ids() -> None:
-    common = {"benchmark": "task-suite", "benchmark_version": "1.0", "benchmark_model": "model-x", "reasoning_mode": "default", "streaming": True, "concurrency": 1, "trials": 1, "proxy_schema_version": 1, "tokenizer": {"repo": "org/tokenizer", "revision": "rev"}, "tasks": ["task-1"]}
-    compatible([{**common, "provider": "acme", "api_model": "acme-model-1"}, {**common, "provider": "globex", "api_model": "globex-model-1"}])
-
-
-def test_compatibility_rejects_different_canonical_models() -> None:
-    common = {"benchmark": "task-suite", "benchmark_version": "1.0", "reasoning_mode": "default", "streaming": True, "concurrency": 1, "trials": 1, "proxy_schema_version": 1, "tokenizer": {"repo": "org/tokenizer", "revision": "rev"}, "tasks": ["task-1"]}
-    with pytest.raises(SystemExit, match="benchmark_model"):
-        compatible([{**common, "benchmark_model": "model-a", "provider": "acme"}, {**common, "benchmark_model": "model-b", "provider": "globex"}])
+def test_compatibility_allows_different_selected_models() -> None:
+    common = {"benchmark": "task-suite", "benchmark_version": "1.0", "reasoning_mode": "default", "streaming": True, "concurrency": 1, "trials": 1, "proxy_schema_version": 1, "tokenizer": {"repo": None, "revision": None}, "tasks": ["task-1"]}
+    compatible([{**common, "model": "model-a", "provider": "acme"}, {**common, "model": "model-b", "provider": "globex"}])
 
 
 def test_local_tokenizer_override_counts_exact_tokens(tmp_path) -> None:

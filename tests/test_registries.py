@@ -83,3 +83,28 @@ def test_shell_provider_validation_failure_does_not_exit(monkeypatch) -> None:
     monkeypatch.setattr("benchmark.providers.validate_registered_provider", fail)
     session = Session.from_state(load_state())
     assert dispatch(session, "/provider validate acme")
+
+
+def test_doctor_uses_active_benchmark(monkeypatch, tmp_path: Path) -> None:
+    import benchmark.doctor as doctor
+
+    tasks = tmp_path / "active-tasks"
+    tasks.mkdir()
+    (tasks / "task-a").mkdir()
+    monkeypatch.setattr(
+        doctor,
+        "active_root_config",
+        lambda: {
+            "benchmark": {
+                "name": "my-suite",
+                "version": "1.0",
+                "tasks_dir": str(tasks),
+                "agent": "agents.instrumented_omp_agent:InstrumentedOmpAgent",
+            }
+        },
+    )
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    monkeypatch.setattr(doctor, "tokenizer_metadata", lambda spec: {"source": "unavailable"})
+    results = {item["name"]: item for item in doctor.checks()}
+    assert results["Tasks"]["detail"] == "1 found"
+    assert results["Tokenizer"]["detail"] == "not cached"

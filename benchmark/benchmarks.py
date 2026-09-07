@@ -69,9 +69,6 @@ def add_benchmark(name: str, settings: dict[str, Any], make_active: bool = True)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", name):
         raise SystemExit("benchmark name must contain only letters, numbers, '-' or '_'")
     missing = [field for field in REQUIRED_FIELDS if not str(settings.get(field, "") or "").strip()]
-    tokenizer = settings.get("tokenizer")
-    if not isinstance(tokenizer, dict) or not str(tokenizer.get("repo") or "").strip() or not str(tokenizer.get("revision") or "").strip():
-        missing.append("tokenizer.repo/revision")
     if missing:
         raise SystemExit(f"benchmark manifest missing field(s): {', '.join(missing)}")
     tasks_dir = Path(str(settings["tasks_dir"])).expanduser()

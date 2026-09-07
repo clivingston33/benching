@@ -111,6 +111,19 @@ Interactive provider management writes:
   benchmarks/<name>.yaml      local BenchmarkSpec manifests
 ```
 
+Provider metadata may carry model-specific execution defaults; secrets remain
+the only contents of the provider env file:
+
+```yaml
+default_model: accounts/example/deepseek
+model_defaults:
+  tokenizer:
+    repo: deepseek-ai/DeepSeek-V4-Flash-0731
+    revision: <sha>
+  context_window: 262144
+  max_tokens: 49152
+```
+
 Add and activate a provider without editing YAML:
 
 ```bash

@@ -6,9 +6,9 @@ import argparse
 import json
 import math
 import statistics
-from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from tokenizers import Tokenizer
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -277,7 +277,7 @@ def tokenizer_path_from_run(run: dict[str, Any]) -> str | None:
 
 
 def compatible(runs: list[dict[str, Any]]) -> None:
-    fields = ("benchmark", "benchmark_version", "benchmark_model", "reasoning_mode", "streaming", "concurrency", "trials", "proxy_schema_version", "tasks")
+    fields = ("benchmark", "benchmark_version", "reasoning_mode", "streaming", "concurrency", "trials", "proxy_schema_version", "tasks")
     for field in fields:
         values_for_field = {json.dumps(run.get(field), sort_keys=True) for run in runs}
         if len(values_for_field) != 1:
@@ -309,7 +309,7 @@ def normalize_runs(run_paths: list[Path], execution: str = "sequential", write_c
         "schema_version": 1,
         "created_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "benchmark": benchmark_label,
-        "benchmark_model": run_data[0].get("benchmark_model"),
+        "model": run_data[0].get("model") or run_data[0].get("api_model"),
         "provider_execution_mode": execution,
         "official_comparison": execution == "sequential",
         "tokenizer": run_data[0].get("tokenizer") or {"repo": None, "revision": None, "local_cache": tokenizer_path, "source": "unavailable"},

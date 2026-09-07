@@ -8,40 +8,45 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from benchmark._paths import CACHE_ROOT
 from benchmark.config import BenchmarkSpec
 
 
-def tokenizer_metadata(spec: BenchmarkSpec, values: dict[str, str] | None = None) -> dict[str, Any]:
-    """Describe where the tokenizer resolves (local cache or env override).
-
-    The optional env override names a tokenizer.json (file) or a directory
-    containing one plus config.json, shared across providers.
-    """
+def tokenizer_metadata(
+    spec: BenchmarkSpec,
+    values: dict[str, str] | None = None,
+    settings: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Describe the selected model tokenizer, if a local copy exists."""
+    settings = settings or {}
     values = values or {}
-    env_path = values.get(spec.tokenizer_env_override) if spec.tokenizer_env_override else None
-    local_cache = Path(env_path).expanduser() if env_path else spec.cache_dir
+    repo = str(settings.get("tokenizer_repo") or spec.tokenizer_repo)
+    revision = str(settings.get("tokenizer_revision") or spec.tokenizer_revision)
+    env_override = settings.get("tokenizer_env_override") or spec.tokenizer_env_override
+    cache_dir = settings.get("cache_dir") or spec.cache_dir
+    env_path = values.get(env_override) if env_override else None
+    local_cache = Path(env_path).expanduser() if env_path else cache_dir
     if not isinstance(local_cache, Path):
-        local_cache = spec.cache_dir
+        local_cache = Path(str(local_cache))
     available = (local_cache / "tokenizer.json").is_file() and (local_cache / "config.json").is_file() if local_cache.is_dir() else local_cache.is_file()
     return {
-        "repo": spec.tokenizer_repo,
-        "revision": spec.tokenizer_revision,
+        "repo": repo or None,
+        "revision": revision or None,
         "source": "huggingface" if available else "unavailable",
         "local_cache": str(local_cache),
     }
 
 
 def ensure_tokenizer(spec: BenchmarkSpec, values: dict[str, str] | None = None) -> dict[str, Any]:
-    """Download the pinned tokenizer into the local cache if not present."""
     metadata = tokenizer_metadata(spec, values)
+    if not metadata["repo"] or not metadata["revision"]:
+        raise SystemExit("no tokenizer configured for this model")
     if metadata["source"] == "huggingface":
         return metadata
     try:
         from huggingface_hub import snapshot_download
         snapshot_download(
-            repo_id=spec.tokenizer_repo,
-            revision=spec.tokenizer_revision,
+            repo_id=str(metadata["repo"]),
+            revision=str(metadata["revision"]),
             local_dir=metadata["local_cache"],
             allow_patterns=["tokenizer.json", "tokenizer_config.json", "config.json"],
         )

@@ -26,8 +26,8 @@ class BenchmarkSpec:
     expected_task_count: int | None
     smoke_tasks: tuple[str, ...]
     agent: str
-    max_tokens: int
-    context_window: int
+    max_tokens: int | None
+    context_window: int | None
     run_id_prefix: str
     tokenizer_repo: str
     tokenizer_revision: str
@@ -70,8 +70,15 @@ def _merge_user_providers(root: dict[str, Any], yaml: Any) -> None:
         merged.update({name: cfg for name, cfg in providers.items() if isinstance(cfg, dict)})
 
 
+def _optional_int(value: Any) -> int | None:
+    try:
+        return int(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
 def benchmark_spec(config: dict[str, Any]) -> BenchmarkSpec:
-    """Build benchmark task metadata; model/reasoning are defaults, not constraints."""
+    """Build benchmark identity and optional execution defaults."""
     settings = config.get("benchmark") if isinstance(config.get("benchmark"), dict) else {}
     tokenizer = settings.get("tokenizer") if isinstance(settings.get("tokenizer"), dict) else {}
     tasks_dir = Path(str(settings.get("tasks_dir", "") or "")).expanduser()
@@ -82,15 +89,10 @@ def benchmark_spec(config: dict[str, Any]) -> BenchmarkSpec:
         smoke = [smoke]
     smoke_tasks = tuple(str(item) for item in smoke if str(item).strip())
     expected = settings.get("expected_task_count")
-    try:
-        expected_count = int(expected) if expected not in (None, "", 0) else None
-    except (TypeError, ValueError):
-        expected_count = None
+    expected_count = _optional_int(expected) if expected not in (None, "", 0) else None
     tokenizer_repo = str(tokenizer.get("repo") or "").strip()
     tokenizer_revision = str(tokenizer.get("revision") or "").strip()
-    if not tokenizer_repo or not tokenizer_revision:
-        raise SystemExit("config/benchmark.yaml: benchmark.tokenizer.repo and revision are required")
-    cache_dir = CACHE_ROOT / "tokenizers" / tokenizer_repo.replace("/", "--")
+    cache_dir = CACHE_ROOT / "tokenizers" / (tokenizer_repo.replace("/", "--") if tokenizer_repo else "unconfigured")
     return BenchmarkSpec(
         name=str(settings.get("name", "benchmark")).strip() or "benchmark",
         version=str(settings.get("version", "")).strip(),
@@ -100,8 +102,8 @@ def benchmark_spec(config: dict[str, Any]) -> BenchmarkSpec:
         expected_task_count=expected_count,
         smoke_tasks=smoke_tasks,
         agent=str(settings.get("agent", "agents.instrumented_omp_agent:InstrumentedOmpAgent")).strip(),
-        max_tokens=int(settings.get("max_tokens", 49152) or 49152),
-        context_window=int(settings.get("context_window", 262144) or 262144),
+        max_tokens=_optional_int(settings.get("max_tokens")),
+        context_window=_optional_int(settings.get("context_window")),
         run_id_prefix=str(settings.get("run_id_prefix", "bench")).strip() or "bench",
         tokenizer_repo=tokenizer_repo,
         tokenizer_revision=tokenizer_revision,
@@ -173,6 +175,39 @@ def resolve(
     if not isinstance(api_model, str) or not api_model:
         raise SystemExit(f"default model unresolved for {name}")
     return endpoint.rstrip("/"), api_model
+
+
+def resolve_model_settings(
+    config: dict[str, Any],
+    spec: BenchmarkSpec,
+    model: str,
+    model_override: bool = False,
+) -> dict[str, Any]:
+    """Resolve model-specific execution settings and their provenance."""
+    defaults = config.get("model_defaults") if isinstance(config.get("model_defaults"), dict) else {}
+    tokenizer = defaults.get("tokenizer") if isinstance(defaults.get("tokenizer"), dict) else {}
+    repo = str(tokenizer.get("repo") or spec.tokenizer_repo).strip()
+    revision = str(tokenizer.get("revision") or spec.tokenizer_revision).strip()
+    env_override = str(tokenizer.get("env_override") or spec.tokenizer_env_override or "").strip() or None
+    cache_dir = CACHE_ROOT / "tokenizers" / (repo.replace("/", "--") if repo else "unconfigured")
+    provider_model_source = "provider.default_model" if config.get("default_model") else "provider.api_model"
+    return {
+        "model": model,
+        "sources": {
+            "model": "run.model_override" if model_override else provider_model_source,
+            "endpoint": "provider.base_url" if config.get("base_url") else "provider.endpoint",
+            "reasoning": "run.reasoning_setting",
+            "tokenizer": "provider.model_defaults" if tokenizer else ("benchmark.tokenizer" if repo else "unconfigured"),
+            "max_tokens": "provider.model_defaults" if "max_tokens" in defaults else ("benchmark.max_tokens" if spec.max_tokens is not None else "harbor.default"),
+            "context_window": "provider.model_defaults" if "context_window" in defaults else ("benchmark.context_window" if spec.context_window is not None else "harbor.default"),
+        },
+        "tokenizer_repo": repo,
+        "tokenizer_revision": revision,
+        "tokenizer_env_override": env_override,
+        "cache_dir": cache_dir,
+        "max_tokens": _optional_int(defaults.get("max_tokens")) if "max_tokens" in defaults else spec.max_tokens,
+        "context_window": _optional_int(defaults.get("context_window")) if "context_window" in defaults else spec.context_window,
+    }
 
 
 def all_provider_env_values(root_config: dict[str, Any]) -> dict[str, str]:

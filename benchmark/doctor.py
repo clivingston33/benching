@@ -6,8 +6,8 @@ import shutil
 import subprocess
 import sys
 
-from benchmark._paths import CONFIG
-from benchmark.config import benchmark_spec, load_yaml
+from benchmark.benchmarks import active_root_config
+from benchmark.config import benchmark_spec
 from benchmark.tokenizer import tokenizer_metadata
 
 
@@ -51,13 +51,12 @@ def checks() -> list[dict[str, object]]:
     )
     spec = None
     tasks_count = None
-    if CONFIG.is_file():
-        try:
-            spec = benchmark_spec(load_yaml())
-        except SystemExit:
-            pass
-        if spec is not None and spec.tasks_dir.is_dir():
-            tasks_count = sum(1 for path in spec.tasks_dir.iterdir() if path.is_dir())
+    try:
+        spec = benchmark_spec(active_root_config())
+    except SystemExit:
+        spec = None
+    if spec is not None and spec.tasks_dir.is_dir():
+        tasks_count = sum(1 for path in spec.tasks_dir.iterdir() if path.is_dir())
     result.extend(
         [
             {"name": "Configuration", "ok": spec is not None, "detail": "valid" if spec is not None else "invalid"},

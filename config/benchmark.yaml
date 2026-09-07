@@ -4,7 +4,6 @@ schema_version: 1
 benchmark:
   name: terminal-bench
   version: "2.1"
-  model: deepseek-v4-flash-0731
   reasoning: default
   tasks_dir: ~/terminal-bench-2-1/tasks
   expected_task_count: 89
@@ -13,18 +12,9 @@ benchmark:
     - break-filter-js-from-html
     - cancel-async-tasks
     - adaptive-rejection-sampler
-  agent: agents.instrumented_omp_agent:InstrumentedOmpAgent
-  # Per-inference request limits; raise for long-horizon agent benchmarks.
-  max_tokens: 49152
-  context_window: 262144
+  # Model-specific defaults belong to provider entries, not benchmark identity.
+  # Runs without a matching local tokenizer retain provider-reported token usage.
   run_id_prefix: bench
-  tokenizer:
-    repo: deepseek-ai/DeepSeek-V4-Flash-0731
-    revision: 7872f01b1d1fe23eabc4c98b48bffcef5a386062
-    # Optional env var naming a local tokenizer.json/dir that overrides the
-    # pinned repo cache. The same variable name may be shared by every provider
-    # env file; omit to always use the pinned repo cache.
-    env_override: TOKENIZER_PATH
 
 # A provider needs an enabled entry here plus a config/<name>.env file with
 # its credentials (copy config/provider.env.example). Providers are picked up
@@ -38,6 +28,12 @@ benchmark:
 #     auth_env: KOURIER_API_KEY
 #     base_url: https://api.kourier.sh/v1
 #     default_model: DSV4-Flash-0731
+#     model_defaults:
+#       tokenizer:
+#         repo: deepseek-ai/DeepSeek-V4-Flash-0731
+#         revision: <sha>
+#       context_window: 262144
+#       max_tokens: 49152
 #     api: openai-completions
 #     strict_model_check: false
 #     plan: soft_launch

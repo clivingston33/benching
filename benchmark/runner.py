@@ -27,6 +27,7 @@ from benchmark.config import (
     provider_config,
     provider_env_values,
     resolve,
+    resolve_model_settings,
 )
 from benchmark.status import ProgressEvent, ProgressFn, scan_harbor_results
 from benchmark.tokenizer import tokenizer_metadata
@@ -107,6 +108,7 @@ def run_directory(
     api_model: str,
     tasks: list[str],
     env_values: dict[str, str] | None = None,
+    model_settings: dict[str, Any] | None = None,
 ) -> Path:
     """Create the isolated runs/<run-id>/ directory and its immutable run.json."""
     RUNS.mkdir(parents=True, exist_ok=True)
@@ -120,7 +122,9 @@ def run_directory(
         "created_at_utc": utc(),
         "benchmark": spec.name,
         "benchmark_version": spec.version,
-        "benchmark_model": options.benchmark_model or api_model,
+        "benchmark_model": spec.model or None,
+        "model": api_model,
+        "model_source": (model_settings or {}).get("sources", {}).get("model", "unknown"),
         "task_count": len(tasks),
         "tasks": tasks,
         "agent": spec.agent,
@@ -131,19 +135,21 @@ def run_directory(
         "api_model": api_model,
         "reasoning_mode": options.reasoning,
         "streaming": True,
-        "concurrency": options.concurrency,
-        "trials": options.trials,
-        "automatic_provider_retries": 0,
-        "task_attempts": options.trials,
-        "harbor_version": version("harbor"),
-        "omp_version": version("omp"),
-        "python_version": platform.python_version(),
+        "effective_settings": {
+            "model": api_model,
+            "reasoning": options.reasoning,
+            "endpoint": endpoint,
+            "max_tokens": (model_settings or {}).get("max_tokens", spec.max_tokens),
+            "context_window": (model_settings or {}).get("context_window", spec.context_window),
+            "tokenizer_repo": (model_settings or {}).get("tokenizer_repo", spec.tokenizer_repo) or None,
+            "tokenizer_revision": (model_settings or {}).get("tokenizer_revision", spec.tokenizer_revision) or None,
+            "sources": (model_settings or {}).get("sources", {}),
+        },
         "os": platform.platform(),
         "kernel": platform.release(),
         "cpu": platform.processor(),
-        "proxy_schema_version": 1,
+        "tokenizer": tokenizer_metadata(spec, env_values, model_settings),
         "proxy_port": options.proxy_port,
-        "tokenizer": tokenizer_metadata(spec, env_values),
     }
     run["environment_fingerprint"] = fingerprint(run)
     (directory / "run.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
@@ -153,7 +159,16 @@ def run_directory(
     return directory
 
 
-def harbor_command(options: RunOptions, spec: BenchmarkSpec, config: dict[str, Any], endpoint: str, api_model: str, directory: Path, tasks: list[str]) -> list[str]:
+def harbor_command(
+    options: RunOptions,
+    spec: BenchmarkSpec,
+    config: dict[str, Any],
+    endpoint: str,
+    api_model: str,
+    directory: Path,
+    tasks: list[str],
+    model_settings: dict[str, Any] | None = None,
+) -> list[str]:
     """Build the Harbor run command that executes the suite in Docker."""
     command = [
         executable("harbor"), "run", "--path", str(spec.tasks_dir),
@@ -169,7 +184,7 @@ def harbor_command(options: RunOptions, spec: BenchmarkSpec, config: dict[str, A
     agent_kwargs = {
         "provider": options.provider,
         "provider_plan": config.get("plan") or "",
-        "benchmark_model": options.benchmark_model or api_model,
+        "benchmark_model": api_model,
         "model": api_model,
         "upstream": endpoint,
         "api_key_env": config["auth_env"],
@@ -177,9 +192,12 @@ def harbor_command(options: RunOptions, spec: BenchmarkSpec, config: dict[str, A
         "proxy_url": f"http://host.docker.internal:{options.proxy_port}",
         "api": config.get("api", "openai-completions"),
         "reasoning": options.reasoning,
-        "max_tokens": str(spec.max_tokens),
-        "context_window": str(spec.context_window),
     }
+    settings = model_settings or {}
+    for key in ("max_tokens", "context_window"):
+        value = settings.get(key, getattr(spec, key))
+        if value is not None:
+            agent_kwargs[key] = str(value)
     for key, value in agent_kwargs.items():
         command.extend(["--agent-kwarg", f"{key}={value}"])
     for task in tasks:
@@ -318,8 +336,8 @@ def run_one(
 ) -> Path:
     """Execute a benchmark run for one provider; returns the run directory.
 
-    Preflight (docker, credentials, tokenizer cache, provider validation) is
-    authoritative: any failure raises SystemExit before a run starts.
+    Preflight checks Docker, credentials, and provider access. Local tokenizer
+    data is optional; missing data disables only local token metrics.
 
     ``progress`` is an optional callback receiving structured
     :class:`ProgressEvent` objects (silent when omitted). The harbor
@@ -335,19 +353,18 @@ def run_one(
     spec = options.benchmark or benchmark_spec(root_config)
     values = provider_env_values(options.provider, config)
     endpoint, api_model = resolve(options.provider, config, values, options.benchmark_model)
-    tokenizer = tokenizer_metadata(spec, values)
-    if tokenizer["source"] != "huggingface":
-        raise SystemExit("tokenizer is not cached; run `benching tokenizer prepare`")
-    emit(_event("tokenizer", "tokenizer cached"))
+    model_settings = resolve_model_settings(config, spec, api_model, bool(options.benchmark_model))
+    tokenizer = tokenizer_metadata(spec, values, model_settings)
+    emit(_event("tokenizer", "tokenizer cached" if tokenizer["source"] == "huggingface" else "tokenizer unavailable; provider token counts retained"))
     emit(_event("validate", f"validating {options.provider}"))
     result = validate_provider(options.provider, spec, root_config, config, values, api_model)
     if not result["success"]:
         raise SystemExit(f"provider validation failed: {result['error_class']}")
     tasks = task_names(options.mode, spec)
     emit(_event("validate", f"validated {options.provider} ({len(tasks)} tasks)", total=len(tasks)))
-    directory = run_directory(options, spec, config, endpoint, api_model, tasks, values)
+    directory = run_directory(options, spec, config, endpoint, api_model, tasks, values, model_settings)
     (directory / "docker-host-gateway.yaml").write_text("services:\n  main:\n    extra_hosts:\n      - host.docker.internal:host-gateway\n", encoding="utf-8")
-    command = harbor_command(options, spec, config, endpoint, api_model, directory, tasks)
+    command = harbor_command(options, spec, config, endpoint, api_model, directory, tasks, model_settings)
     (directory / "command.json").write_text(json.dumps(command, indent=2) + "\n", encoding="utf-8")
     env = environment(config, values)
     proxy: subprocess.Popen[bytes] | None = None
