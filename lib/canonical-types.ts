@@ -7,20 +7,20 @@ export interface CanonicalMetric<T = number> {
 }
 
 export interface CanonicalDistribution {
-  count: number;
+  count?: number;
   mean: number | null;
-  median: number | null;
-  min: number | null;
-  max: number | null;
-  p5: number | null;
-  p25: number | null;
-  p75: number | null;
-  p90: number | null;
+  median?: number | null;
+  min?: number | null;
+  max?: number | null;
+  p5?: number | null;
+  p25?: number | null;
+  p50: number | null;
+  p75?: number | null;
+  p90?: number | null;
   p95: number | null;
-  p99: number | null;
-  stdev: number | null;
-  cv: number | null;
-  p50?: number | null;
+  p99?: number | null;
+  stdev?: number | null;
+  cv?: number | null;
 }
 
 export interface CanonicalBenchmark {
@@ -70,73 +70,72 @@ export interface CanonicalReliability {
   successful_requests: number;
   failed_requests: number;
   success_rate: number | null;
-  request_success_rate: number | null;
-  stream_completion_rate: number | null;
-  http_error_rate: number | null;
-  timeout_rate: number | null;
-  provider_failures: number;
-  downstream_cancellations: number;
-  incomplete_provider_streams: number;
-  errors: number;
+  request_success_rate?: number | null;
+  stream_completion_rate?: number | null;
+  http_error_rate?: number | null;
+  timeout_rate?: number | null;
+  provider_failures?: number;
+  downstream_cancellations?: number;
+  incomplete_provider_streams?: number;
+  errors?: number;
 }
 
 export interface CanonicalTokens {
   input: number | null;
   output: number | null;
-  input_provider: number | null;
-  output_provider: number | null;
-  total_provider: number | null;
+  input_provider?: number | null;
+  output_provider?: number | null;
+  total_provider?: number | null;
   cache_read: number | null;
-  cache_write: number | null;
-  output_local: number | null;
-}
-
-export interface CanonicalTaskTiming {
-  ttft_ms?: CanonicalMetric;
-  decode_duration_ms?: CanonicalMetric;
-  end_to_end_latency_ms?: CanonicalMetric;
-  decode_tps?: CanonicalMetric;
-  effective_tps?: CanonicalMetric;
+  cache_write?: number | null;
+  output_local?: number | null;
 }
 
 export interface CanonicalTaskTokens {
-  input_provider?: CanonicalMetric;
-  output_provider?: CanonicalMetric;
-  total_provider?: CanonicalMetric;
-  cache_read?: CanonicalMetric;
-  cache_write?: CanonicalMetric;
-  output_local?: CanonicalMetric;
+  input: number | null;
+  output: number | null;
+  cache_read: number | null;
+  cache_write: number | null;
+}
+
+export interface CanonicalTaskLatency {
+  ttft_ms_mean: number | null;
+  ttft_ms_p50: number | null;
+  ttft_ms_p95: number | null;
+  end_to_end_latency_ms_mean: number | null;
 }
 
 export interface CanonicalTaskReliability {
-  success: boolean;
-  stream_completed?: boolean;
-  downstream_cancelled?: boolean;
-  provider_failure?: boolean;
-  provider_stream_failure?: boolean;
-  incomplete_provider_stream?: boolean;
-  timeout?: boolean;
-  error_type?: string | null;
-  error_message?: string | null;
-  http_status?: number | null;
+  successful_requests: number;
+  failed_requests: number;
+  success_rate: number | null;
 }
 
 export interface CanonicalTaskResult {
   task_id: string;
-  trial_id: string;
-  request_id: string;
-  success: boolean;
-  stream_completed: boolean;
-  timing: CanonicalTaskTiming;
+  trial_id: string | null;
+  passed: boolean | null;
+  reward: number | null;
+  duration_sec: number | null;
+  exception: string | null;
+  timeout: boolean | null;
+  requests: number;
   tokens: CanonicalTaskTokens;
+  latency: CanonicalTaskLatency;
   reliability: CanonicalTaskReliability;
+}
+
+export interface CanonicalContextMetric {
+  mean: number | null;
+  p50?: number | null;
+  p95?: number | null;
 }
 
 export interface CanonicalContextBucket {
   requests: number;
-  ttft_ms: CanonicalDistribution;
-  decode_tps: CanonicalDistribution;
-  end_to_end_latency_ms?: CanonicalDistribution;
+  ttft_ms: CanonicalContextMetric;
+  decode_tps: CanonicalContextMetric;
+  end_to_end_latency_ms: CanonicalContextMetric;
   failure_rate: number | null;
 }
 
@@ -158,8 +157,8 @@ export interface CanonicalRunSummary {
   latency: CanonicalLatency;
   reliability: CanonicalReliability;
   tokens: CanonicalTokens;
+  context: Record<string, CanonicalContextBucket>;
   tasks: CanonicalTaskResult[];
-  context?: Record<string, CanonicalContextBucket>;
 }
 
 export interface CanonicalComparison {

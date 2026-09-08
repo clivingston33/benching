@@ -17,8 +17,8 @@ import { presentationFor } from "@/lib/provider-presentation";
 
 function metricValue(run: RunSummary, metric: Metric) {
   if (metric === "Benchmark Score") return run.score.value == null ? null : run.score.value * 100;
-  if (metric === "Output Speed") return run.speed.decode_tps.median;
-  if (metric === "Time to First Token") return run.latency.ttft_ms.median;
+  if (metric === "Output Speed") return run.speed.decode_tps.p50;
+  if (metric === "Time to First Token") return run.latency.ttft_ms.p50;
   return run.reliability.request_success_rate == null ? null : run.reliability.request_success_rate * 100;
 }
 

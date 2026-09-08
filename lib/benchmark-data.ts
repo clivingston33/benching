@@ -52,10 +52,10 @@ export function getComparison(selection: RunSelection): SelectedComparison {
 export function comparisonRowsFor(selection: RunSelection) {
   const { runs } = getComparison(selection);
   const fields = [
-    ["Median Output Speed", (run: CanonicalRunSummary) => run.speed.decode_tps.median, (value: number | null) => formatNumber(value, " tok/s")],
-    ["Median Time to First Token", (run: CanonicalRunSummary) => run.latency.ttft_ms.median, (value: number | null) => formatNumber(value, " ms")],
-    ["P95 Time to First Token", (run: CanonicalRunSummary) => run.latency.ttft_ms.p95, (value: number | null) => formatNumber(value, " ms")],
-    ["Median End-to-End Time", (run: CanonicalRunSummary) => run.latency.end_to_end_latency_ms.median, (value: number | null) => formatNumber(value, " ms")],
+    ["Median Output Speed", (run: CanonicalRunSummary) => run.speed.decode_tps.p50, (value: number | null | undefined) => formatNumber(value, " tok/s")],
+    ["Median Time to First Token", (run: CanonicalRunSummary) => run.latency.ttft_ms.p50, (value: number | null | undefined) => formatNumber(value, " ms")],
+    ["P95 Time to First Token", (run: CanonicalRunSummary) => run.latency.ttft_ms.p95, (value: number | null | undefined) => formatNumber(value, " ms")],
+    ["Median End-to-End Time", (run: CanonicalRunSummary) => run.latency.end_to_end_latency_ms.p50, (value: number | null | undefined) => formatNumber(value, " ms")],
     ["Request Success Rate", (run: CanonicalRunSummary) => run.reliability.request_success_rate, formatPercent],
     ["Stream Completion Rate", (run: CanonicalRunSummary) => run.reliability.stream_completion_rate, formatPercent],
     ["Timeout Rate", (run: CanonicalRunSummary) => run.reliability.timeout_rate, formatPercent],
@@ -73,10 +73,10 @@ export function metricRowsFor(selection: RunSelection, metric: "score" | "decode
 
 function metricValue(run: CanonicalRunSummary, metric: string): number | null {
   if (metric === "score") return run.score.value == null ? null : run.score.value * 100;
-  if (metric === "decode_tps") return run.speed.decode_tps.median;
-  if (metric === "effective_tps") return run.speed.effective_tps.median;
-  if (metric === "ttft_ms") return run.latency.ttft_ms.median;
-  if (metric === "end_to_end_latency_ms") return run.latency.end_to_end_latency_ms.median;
+  if (metric === "decode_tps") return run.speed.decode_tps.p50 ?? null;
+  if (metric === "effective_tps") return run.speed.effective_tps.p50 ?? null;
+  if (metric === "ttft_ms") return run.latency.ttft_ms.p50 ?? null;
+  if (metric === "end_to_end_latency_ms") return run.latency.end_to_end_latency_ms.p50 ?? null;
   if (metric === "request_success_rate") return run.reliability.request_success_rate == null ? null : run.reliability.request_success_rate * 100;
   return run.reliability.timeout_rate == null ? null : run.reliability.timeout_rate * 100;
 }
@@ -99,14 +99,14 @@ export function contextRowsFor(selection: RunSelection, metric: "speed" | "laten
 function contextValue(run: CanonicalRunSummary, metric: "speed" | "latency" | "reliability", label: string): number | null {
   const bucket = run.context?.[label];
   if (!bucket) return null;
-  if (metric === "speed") return bucket.decode_tps.median;
-  if (metric === "latency") return bucket.ttft_ms.median;
+  if (metric === "speed") return bucket.decode_tps.p50 ?? null;
+  if (metric === "latency") return bucket.ttft_ms.p50 ?? null;
   return bucket.failure_rate == null ? null : bucket.failure_rate * 100;
 }
 
 export interface ComparisonTaskResult {
   taskId: string;
-  trialId: string;
+  trialId: string | null;
   results: Record<string, CanonicalTaskResult | undefined>;
 }
 
@@ -114,7 +114,7 @@ export function taskResultsFor(selection: RunSelection): ComparisonTaskResult[] 
   const { runs } = getComparison(selection);
   const groups = new Map<string, ComparisonTaskResult>();
   runs.forEach((run) => run.tasks.forEach((task) => {
-    const key = `${task.task_id}:${task.trial_id}`;
+    const key = `${task.task_id}:${task.trial_id ?? "unknown"}`;
     const group = groups.get(key) ?? { taskId: task.task_id, trialId: task.trial_id, results: {} };
     group.results[run.provider.id] = task;
     groups.set(key, group);
@@ -171,15 +171,15 @@ function formatComparisonLabel(comparison: CanonicalComparison) {
   return `${formatDate(comparison.created_at_utc)} comparison`;
 }
 
-function formatNumber(value: number | null, suffix: string) { return value == null ? "n/a" : `${Math.round(value).toLocaleString()}${suffix}`; }
-function formatPercent(value: number | null) { return value == null ? "n/a" : `${(value * 100).toFixed(2)}%`; }
-function toPercent(value: number | null) { return value == null ? null : value * 100; }
+function formatNumber(value: number | null | undefined, suffix: string) { return value == null ? "n/a" : `${Math.round(value).toLocaleString()}${suffix}`; }
+function formatPercent(value: number | null | undefined) { return value == null ? "n/a" : `${(value * 100).toFixed(2)}%`; }
+function toPercent(value: number | null | undefined) { return value == null ? null : value * 100; }
 
 export function fmtDuration(task: CanonicalTaskResult | undefined) {
-  const value = task?.timing.end_to_end_latency_ms?.value;
+  const value = task?.duration_sec;
   if (value == null) return "n/a";
-  const minutes = Math.floor(value / 60000);
-  return `${minutes}m ${String(Math.round(value / 1000) % 60).padStart(2, "0")}s`;
+  const minutes = Math.floor(value / 60);
+  return `${minutes}m ${String(Math.round(value) % 60).padStart(2, "0")}s`;
 }
 
 export function fmtTokens(value: number | null | undefined) { return value == null ? "n/a" : `${Math.round(value / 1000)}K`; }
