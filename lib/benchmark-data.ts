@@ -1,5 +1,7 @@
-import { artifacts } from "@/lib/artifact-loader";
+import summaryArtifact from "@/data/summary.json";
+import comparisonJanuary from "@/data/comparison-20260102.json";
 import { presentationFor } from "@/lib/provider-presentation";
+import type { CanonicalArtifacts } from "@/lib/artifact-loader";
 import type { CanonicalComparison, CanonicalRunSummary, CanonicalTaskResult } from "@/lib/canonical-types";
 
 export type {
@@ -18,15 +20,46 @@ export type {
   CanonicalTokens,
 } from "@/lib/canonical-types";
 
-export const summaryData = artifacts.summary;
-export const comparisons = artifacts.comparisons;
-export const allRuns = Array.from(new Map([...comparisons.flatMap((comparison) => comparison.runs), summaryData].map((run) => [run.run_id, run])).values());
-export const providers = Array.from(new Map(allRuns.map((run, index) => [run.provider.id, presentationFor(run.provider, index)])).values());
-export const benchmarks = Array.from(new Map(allRuns.map((run) => [`${run.benchmark.name}:${run.benchmark.version}`, run.benchmark])).values());
+const fixtureArtifacts: CanonicalArtifacts = {
+  summary: summaryArtifact as unknown as CanonicalRunSummary,
+  summaries: [summaryArtifact as unknown as CanonicalRunSummary],
+  comparisons: [comparisonJanuary as unknown as CanonicalComparison],
+};
 
 export type RunSelection = string;
-export const comparisonOptions = comparisons.map((comparison, index) => ({ selection: `comparison:${index}`, label: formatComparisonLabel(comparison), comparison }));
-export const runOptions = allRuns.map((run) => ({ selection: `run:${run.run_id}`, label: `${formatDate(run.created_at_utc)} · ${run.provider.name}`, run }));
+
+function deriveData(data: CanonicalArtifacts) {
+  const comparisons = data.comparisons;
+  const allRuns = Array.from(new Map([...data.summaries, ...comparisons.flatMap((comparison) => comparison.runs)].map((run) => [run.run_id, run])).values());
+  const providers = Array.from(new Map(allRuns.map((run, index) => [run.provider.id, presentationFor(run.provider, index)])).values());
+  const benchmarks = Array.from(new Map(allRuns.map((run) => [`${run.benchmark.name}:${run.benchmark.version}`, run.benchmark])).values());
+  const comparisonOptions = comparisons.map((comparison, index) => ({ selection: `comparison:${index}`, label: formatComparisonLabel(comparison), comparison }));
+  const runOptions = allRuns.map((run) => ({ selection: `run:${run.run_id}`, label: `${formatDate(run.created_at_utc)} · ${run.provider.name}`, run }));
+  return { summaryData: data.summary, comparisons, allRuns, providers, benchmarks, comparisonOptions, runOptions };
+}
+
+let activeArtifacts = fixtureArtifacts;
+let derivedData = deriveData(activeArtifacts);
+export let summaryData = derivedData.summaryData;
+export let comparisons = derivedData.comparisons;
+export let allRuns = derivedData.allRuns;
+export let providers = derivedData.providers;
+export let benchmarks = derivedData.benchmarks;
+export let comparisonOptions = derivedData.comparisonOptions;
+export let runOptions = derivedData.runOptions;
+
+export function configureArtifacts(next: CanonicalArtifacts): void {
+  if (next === activeArtifacts) return;
+  activeArtifacts = next;
+  derivedData = deriveData(next);
+  summaryData = derivedData.summaryData;
+  comparisons = derivedData.comparisons;
+  allRuns = derivedData.allRuns;
+  providers = derivedData.providers;
+  benchmarks = derivedData.benchmarks;
+  comparisonOptions = derivedData.comparisonOptions;
+  runOptions = derivedData.runOptions;
+}
 
 export interface SelectedComparison {
   source: CanonicalComparison;
@@ -39,8 +72,17 @@ export function getComparison(selection: RunSelection): SelectedComparison {
     const runId = selection.slice(4);
     const run = allRuns.find((candidate) => candidate.run_id === runId);
     if (!run) throw new Error(`Unknown run selection: ${runId}`);
-    const source = comparisons.find((candidate) => candidate.run_ids.includes(runId));
-    if (!source) throw new Error(`No comparison artifact contains run ${runId}`);
+    const source: CanonicalComparison = comparisons.find((candidate) => candidate.run_ids.includes(runId)) ?? {
+      schema_version: 1,
+      created_at_utc: run.created_at_utc,
+      benchmark: run.benchmark,
+      run_ids: [run.run_id],
+      models: [run.model],
+      execution_mode: "sequential",
+      official_comparison: false,
+      tokenizers_comparable: false,
+      runs: [run],
+    };
     return { source, runs: [run], label: `${formatDate(run.created_at_utc)} · ${run.provider.name}` };
   }
   const index = Number(selection.slice("comparison:".length));

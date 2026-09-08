@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
 import summaryArtifact from "@/data/summary.json";
 import comparisonJanuary from "@/data/comparison-20260102.json";
 import { isCanonicalObject, type CanonicalComparison, type CanonicalRunSummary } from "@/lib/canonical-types";
@@ -75,12 +77,43 @@ function validateComparison(value: unknown, source: string): CanonicalComparison
 
 export interface CanonicalArtifacts {
   summary: CanonicalRunSummary;
+  summaries: CanonicalRunSummary[];
   comparisons: CanonicalComparison[];
 }
 
+function readJson(file: string): unknown {
+  try {
+    return JSON.parse(readFileSync(file, "utf8"));
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Error(`${path.basename(file)}: invalid JSON`);
+    throw error;
+  }
+}
+
+function loadExternalArtifacts(directory: string): CanonicalArtifacts {
+  const root = path.resolve(directory);
+  const entries = readdirSync(root, { withFileTypes: true });
+  const summaries = entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(root, entry.name, "summary.json"))
+    .filter((file) => existsSync(file) && statSync(file).isFile())
+    .sort()
+    .map((file) => validateRun(readJson(file), `${path.basename(path.dirname(file))}/summary.json`));
+  if (summaries.length === 0) throw new Error(`No run summaries found in ${root}`);
+
+  const comparisons = entries
+    .filter((entry) => entry.isFile() && /^comparison-.*\.json$/.test(entry.name))
+    .map((entry) => entry.name)
+    .sort()
+    .map((name) => validateComparison(readJson(path.join(root, name)), name));
+  const summary = summaries.reduce((latest, current) => current.created_at_utc > latest.created_at_utc ? current : latest);
+  return { summary, summaries, comparisons };
+}
+
 export function loadArtifacts(): CanonicalArtifacts {
-  const comparisons = [validateComparison(comparisonJanuary, "comparison-20260102.json")];
-  return { summary: validateRun(summaryArtifact, "summary.json"), comparisons };
+  if (process.env.BENCHING_DATA_DIR) return loadExternalArtifacts(process.env.BENCHING_DATA_DIR);
+  const summary = validateRun(summaryArtifact, "summary.json");
+  return { summary, summaries: [summary], comparisons: [validateComparison(comparisonJanuary, "comparison-20260102.json")] };
 }
 
 export const artifacts = loadArtifacts();

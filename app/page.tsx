@@ -1,3 +1,4 @@
+import { loadArtifacts } from "@/lib/artifact-loader";
 import SideNav from "./components/SideNav";
 import RunSelector from "./components/RunSelector";
 import ProviderComparisonSection from "./components/ProviderComparisonSection";
@@ -10,6 +11,7 @@ import RunHistorySection from "./components/RunHistorySection";
 import BenchmarksSection from "./components/BenchmarksSection";
 import TaskResultsSection from "./components/TaskResultsSection";
 import { RunSelectionProvider } from "@/lib/run-selection";
+export const dynamic = "force-dynamic";
 
 function Section({ id, title, children }: { id: string; title: string; children?: React.ReactNode }) {
   return (
@@ -24,6 +26,7 @@ function Section({ id, title, children }: { id: string; title: string; children?
 }
 
 export default function Home() {
+  const artifacts = loadArtifacts();
   return (
     <main className="wrap">
       <div className="hero">
@@ -38,7 +41,7 @@ export default function Home() {
         </p>
       </div>
 
-      <RunSelectionProvider>
+      <RunSelectionProvider artifacts={artifacts}>
         <div className="run-selector-row">
           <RunSelector />
         </div>

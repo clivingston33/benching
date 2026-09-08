@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import { comparisonOptions, runOptions, type RunSelection } from "@/lib/benchmark-data";
+import { comparisonOptions, configureArtifacts, runOptions, type RunSelection } from "@/lib/benchmark-data";
+import type { CanonicalArtifacts } from "@/lib/artifact-loader";
 
 interface RunSelectionValue {
   selection: RunSelection;
@@ -13,8 +14,9 @@ interface RunSelectionValue {
 
 const RunSelectionContext = createContext<RunSelectionValue | null>(null);
 
-export function RunSelectionProvider({ children }: { children: ReactNode }) {
-  const [selection, setSelection] = useState<RunSelection>(comparisonOptions[0]?.selection ?? "");
+export function RunSelectionProvider({ children, artifacts }: { children: ReactNode; artifacts: CanonicalArtifacts }) {
+  configureArtifacts(artifacts);
+  const [selection, setSelection] = useState<RunSelection>(comparisonOptions[0]?.selection ?? runOptions[0]?.selection ?? "");
   const label = comparisonOptions.find((item) => item.selection === selection)?.label ?? runOptions.find((item) => item.selection === selection)?.label ?? "No artifact selected";
   const value = useMemo(() => ({ selection, setSelection, comparisons: comparisonOptions, runs: runOptions, label }), [selection, label]);
   return <RunSelectionContext.Provider value={value}>{children}</RunSelectionContext.Provider>;
