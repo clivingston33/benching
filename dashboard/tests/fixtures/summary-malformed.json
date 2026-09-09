@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "run_id": "bench-malformed",
+  "created_at_utc": "2026-09-08T00:00:00Z",
+  "benchmark": { "name": "terminal-bench", "version": "2.1", "task_count": 1 },
+  "provider": { "id": "fireworks", "name": "Fireworks" },
+  "model": "deepseek-v4",
+  "reasoning": "default",
+  "execution": { "concurrency": 1, "trials": 1 },
+  "score": { "value": 1.0, "passed": 1, "failed": 0, "total": 1, "success_rate": 1.0, "errored": 0, "timeout": 0 },
+  "speed": {},
+  "latency": {
+    "ttft_ms": { "count": 1, "mean": 10.0, "median": 10.0, "p50": 10.0, "p95": 10.0 },
+    "decode_duration_ms": { "count": 1, "mean": 100.0, "median": 100.0, "p50": 100.0, "p95": 100.0 },
+    "end_to_end_latency_ms": { "count": 1, "mean": 200.0, "median": 200.0, "p50": 200.0, "p95": 200.0 },
+    "ttft_ms_mean": 10.0,
+    "ttft_ms_p50": 10.0,
+    "ttft_ms_p95": 10.0
+  },
+  "reliability": { "successful_requests": 1, "failed_requests": 0, "success_rate": 1.0 },
+  "tokens": { "input": 50, "output": 10, "input_provider": 50, "output_provider": 10, "total_provider": 60, "cache_read": null, "cache_write": null, "output_local": 10 },
+  "context": {
+    "0-4K": {
+      "requests": 1,
+      "ttft_ms": { "mean": 10.0, "p50": 10.0, "p95": 10.0 },
+      "decode_tps": { "mean": 10.0, "p50": 10.0, "p95": 10.0 },
+      "end_to_end_latency_ms": { "mean": 200.0 },
+      "failure_rate": 0.0
+    }
+  },
+  "tasks": []
+}
