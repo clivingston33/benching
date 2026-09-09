@@ -1,24 +1,49 @@
 "use client";
 
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import { comparisonOptions, configureArtifacts, runOptions, type RunSelection } from "@/lib/benchmark-data";
+import {
+  createDataset,
+  defaultSelection,
+  hasSelection,
+  selectionLabel,
+  type ArtifactDataset,
+  type RunSelection,
+} from "@/lib/benchmark-data";
 import type { CanonicalArtifacts } from "@/lib/artifact-loader";
 
 interface RunSelectionValue {
   selection: RunSelection;
   setSelection: (selection: RunSelection) => void;
-  comparisons: typeof comparisonOptions;
-  runs: typeof runOptions;
+  comparisons: ArtifactDataset["comparisonOptions"];
+  runs: ArtifactDataset["runOptions"];
   label: string;
+  dataset: ArtifactDataset;
+  allRuns: ArtifactDataset["allRuns"];
+  providers: ArtifactDataset["providers"];
 }
 
 const RunSelectionContext = createContext<RunSelectionValue | null>(null);
 
 export function RunSelectionProvider({ children, artifacts }: { children: ReactNode; artifacts: CanonicalArtifacts }) {
-  configureArtifacts(artifacts);
-  const [selection, setSelection] = useState<RunSelection>(comparisonOptions[0]?.selection ?? runOptions[0]?.selection ?? "");
-  const label = comparisonOptions.find((item) => item.selection === selection)?.label ?? runOptions.find((item) => item.selection === selection)?.label ?? "No artifact selected";
-  const value = useMemo(() => ({ selection, setSelection, comparisons: comparisonOptions, runs: runOptions, label }), [selection, label]);
+  const dataset = useMemo(() => createDataset(artifacts), [artifacts]);
+  const [selection, setSelection] = useState<RunSelection>(() => defaultSelection(dataset));
+  // Never point at a removed selection merely because ordering changed:
+  // retain valid selections, deterministically fall back otherwise.
+  const effective = hasSelection(dataset, selection) ? selection : defaultSelection(dataset);
+  const label = selectionLabel(dataset, effective);
+  const value = useMemo(
+    () => ({
+      selection: effective,
+      setSelection,
+      comparisons: dataset.comparisonOptions,
+      runs: dataset.runOptions,
+      label,
+      dataset,
+      allRuns: dataset.allRuns,
+      providers: dataset.providers,
+    }),
+    [dataset, effective, label]
+  );
   return <RunSelectionContext.Provider value={value}>{children}</RunSelectionContext.Provider>;
 }
 

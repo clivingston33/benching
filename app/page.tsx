@@ -25,6 +25,25 @@ function Section({ id, title, children }: { id: string; title: string; children?
   );
 }
 
+function ArtifactNotices({ notices }: { notices: Array<{ file: string; kind: string; reason: string }> }) {
+  if (notices.length === 0) return null;
+  return (
+    <section id="artifact-notices" className="content-section">
+      <h2 className="comparison-title">
+        <span className="sq" aria-hidden />
+        Artifact Notices
+      </h2>
+      <ul className="section-placeholder" style={{ textAlign: "left" }}>
+        {notices.map((notice) => (
+          <li key={`${notice.kind}:${notice.file}`}>
+            {notice.kind === "unsupported_version" ? "Unsupported artifact version" : notice.kind === "unreadable" ? "Unreadable artifact" : "Invalid artifact"}: {notice.file} — {notice.reason}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export default function Home() {
   const artifacts = loadArtifacts();
   return (
@@ -41,6 +60,16 @@ export default function Home() {
         </p>
       </div>
 
+      {artifacts.summaries.length === 0 ? (
+        <section id="no-artifacts" className="content-section">
+          <h2 className="comparison-title">
+            <span className="sq" aria-hidden />
+            No benchmark runs found
+          </h2>
+          <p className="section-placeholder">Run a benchmark or point BENCHING_DATA_DIR at a directory containing canonical summary.json artifacts.</p>
+          <ArtifactNotices notices={artifacts.notices} />
+        </section>
+      ) : (
       <RunSelectionProvider artifacts={artifacts}>
         <div className="run-selector-row">
           <RunSelector />
@@ -122,7 +151,9 @@ export default function Home() {
           </section>
           </div>
         </div>
+        <ArtifactNotices notices={artifacts.notices} />
       </RunSelectionProvider>
+      )}
     </main>
   );
 }

@@ -1,5 +1,3 @@
-import summaryArtifact from "@/data/summary.json";
-import comparisonJanuary from "@/data/comparison-20260102.json";
 import { presentationFor } from "@/lib/provider-presentation";
 import type { CanonicalArtifacts } from "@/lib/artifact-loader";
 import type { CanonicalComparison, CanonicalRunSummary, CanonicalTaskResult } from "@/lib/canonical-types";
@@ -20,45 +18,108 @@ export type {
   CanonicalTokens,
 } from "@/lib/canonical-types";
 
-const fixtureArtifacts: CanonicalArtifacts = {
-  summary: summaryArtifact as unknown as CanonicalRunSummary,
-  summaries: [summaryArtifact as unknown as CanonicalRunSummary],
-  comparisons: [comparisonJanuary as unknown as CanonicalComparison],
-};
-
 export type RunSelection = string;
 
-function deriveData(data: CanonicalArtifacts) {
-  const comparisons = data.comparisons;
-  const allRuns = Array.from(new Map([...data.summaries, ...comparisons.flatMap((comparison) => comparison.runs)].map((run) => [run.run_id, run])).values());
-  const providers = Array.from(new Map(allRuns.map((run, index) => [run.provider.id, presentationFor(run.provider, index)])).values());
-  const benchmarks = Array.from(new Map(allRuns.map((run) => [`${run.benchmark.name}:${run.benchmark.version}`, run.benchmark])).values());
-  const comparisonOptions = comparisons.map((comparison, index) => ({ selection: `comparison:${index}`, label: formatComparisonLabel(comparison), comparison }));
-  const runOptions = allRuns.map((run) => ({ selection: `run:${run.run_id}`, label: `${formatDate(run.created_at_utc)} · ${run.provider.name}`, run }));
-  return { summaryData: data.summary, comparisons, allRuns, providers, benchmarks, comparisonOptions, runOptions };
+export interface RunSeries {
+  /** Canonical data key: the run id. Never a provider id. */
+  key: string;
+  run: CanonicalRunSummary;
+  /** Display label, disambiguated when provider+model repeat. */
+  label: string;
+  name: string;
+  model: string;
+  /** Time/short-id suffix when another run shares provider+model, else null. */
+  disambiguator: string | null;
+  color: string;
+  logo?: string;
 }
 
-let activeArtifacts = fixtureArtifacts;
-let derivedData = deriveData(activeArtifacts);
-export let summaryData = derivedData.summaryData;
-export let comparisons = derivedData.comparisons;
-export let allRuns = derivedData.allRuns;
-export let providers = derivedData.providers;
-export let benchmarks = derivedData.benchmarks;
-export let comparisonOptions = derivedData.comparisonOptions;
-export let runOptions = derivedData.runOptions;
+export interface ArtifactDataset {
+  summary: CanonicalRunSummary | null;
+  summaries: CanonicalRunSummary[];
+  comparisons: CanonicalComparison[];
+  allRuns: CanonicalRunSummary[];
+  providers: Array<{ id: string; name: string; color: string; logo?: string }>;
+  comparisonOptions: Array<{ selection: string; label: string }>;
+  runOptions: Array<{ selection: string; label: string }>;
+}
 
-export function configureArtifacts(next: CanonicalArtifacts): void {
-  if (next === activeArtifacts) return;
-  activeArtifacts = next;
-  derivedData = deriveData(next);
-  summaryData = derivedData.summaryData;
-  comparisons = derivedData.comparisons;
-  allRuns = derivedData.allRuns;
-  providers = derivedData.providers;
-  benchmarks = derivedData.benchmarks;
-  comparisonOptions = derivedData.comparisonOptions;
-  runOptions = derivedData.runOptions;
+/** Provider+model display label, disambiguated by time and short id on repeats. Presentation only. */
+export function runDisplayLabel(run: CanonicalRunSummary, runs: CanonicalRunSummary[]): string {
+  const base = `${run.provider.name} · ${run.model}`;
+  const dupes = runs.filter((other) => other.provider.id === run.provider.id && other.model === run.model);
+  if (dupes.length <= 1) return base;
+  const time = formatTime(run.created_at_utc);
+  const label = `${base} · ${time}`;
+  if (dupes.filter((other) => formatTime(other.created_at_utc) === time).length <= 1) return label;
+  return `${label} · ${run.run_id.slice(-4)}`;
+}
+
+function disambiguatorFor(run: CanonicalRunSummary, runs: CanonicalRunSummary[]): string | null {
+  const base = `${run.provider.name} · ${run.model}`;
+  const dupes = runs.filter((other) => other.provider.id === run.provider.id && other.model === run.model);
+  if (dupes.length <= 1) return null;
+  const time = formatTime(run.created_at_utc);
+  if (dupes.filter((other) => formatTime(other.created_at_utc) === time).length <= 1) return time;
+  return `${time} · ${run.run_id.slice(-4)}`;
+}
+
+/** One series per run, keyed by run id. Provider identity is presentation metadata only. */
+export function seriesFor(runs: CanonicalRunSummary[]): RunSeries[] {
+  return runs.map((run, index) => {
+    const presentation = presentationFor(run.provider, index);
+    return {
+      key: run.run_id,
+      run,
+      label: runDisplayLabel(run, runs),
+      name: presentation.name,
+      model: run.model,
+      disambiguator: disambiguatorFor(run, runs),
+      color: presentation.color,
+      logo: presentation.logo,
+    };
+  });
+}
+
+/** Pure derivation: validated immutable artifacts in, frozen dataset out. No module state. */
+export function createDataset(data: CanonicalArtifacts): ArtifactDataset {
+  const comparisons = [...data.comparisons];
+  const standaloneById = new Map(data.summaries.map((run) => [run.run_id, run]));
+  const embeddedById = new Map(comparisons.flatMap((comparison) => comparison.runs).map((run) => [run.run_id, run]));
+  // Canonical standalone summaries win over embedded snapshots: reanalysis
+  // refreshes standalone files while comparison embeddings stay frozen.
+  const allRuns = Array.from(new Map([...embeddedById, ...standaloneById]).values());
+  const providers = Array.from(new Map(allRuns.map((run, index) => [run.provider.id, presentationFor(run.provider, index)])).values());
+  const comparisonOptions = comparisons.map((comparison) => ({
+    selection: `comparison:${comparison.comparison_id ?? comparison.run_ids.join("+")}`,
+    label: formatComparisonLabel(comparison),
+    comparison,
+  }));
+  const runOptions = allRuns.map((run) => ({
+    selection: `run:${run.run_id}`,
+    label: `${formatDate(run.created_at_utc)} · ${runDisplayLabel(run, allRuns)}`,
+    run,
+  }));
+  return { summary: data.summary, summaries: [...data.summaries], comparisons, allRuns, providers, comparisonOptions, runOptions };
+}
+
+export function defaultSelection(dataset: ArtifactDataset): RunSelection {
+  return dataset.comparisonOptions[0]?.selection ?? dataset.runOptions[0]?.selection ?? "";
+}
+
+export function hasSelection(dataset: ArtifactDataset, selection: RunSelection): boolean {
+  return (
+    dataset.comparisonOptions.some((item) => item.selection === selection) ||
+    dataset.runOptions.some((item) => item.selection === selection)
+  );
+}
+
+export function selectionLabel(dataset: ArtifactDataset, selection: RunSelection): string {
+  return (
+    dataset.comparisonOptions.find((item) => item.selection === selection)?.label ??
+    dataset.runOptions.find((item) => item.selection === selection)?.label ??
+    "No artifact selected"
+  );
 }
 
 export interface SelectedComparison {
@@ -67,7 +128,8 @@ export interface SelectedComparison {
   label: string;
 }
 
-export function getComparison(selection: RunSelection): SelectedComparison {
+export function getComparison(dataset: ArtifactDataset, selection: RunSelection): SelectedComparison {
+  const { allRuns, comparisons } = dataset;
   if (selection.startsWith("run:")) {
     const runId = selection.slice(4);
     const run = allRuns.find((candidate) => candidate.run_id === runId);
@@ -85,14 +147,17 @@ export function getComparison(selection: RunSelection): SelectedComparison {
     };
     return { source, runs: [run], label: `${formatDate(run.created_at_utc)} · ${run.provider.name}` };
   }
-  const index = Number(selection.slice("comparison:".length));
-  const source = comparisons[index];
+  const rest = selection.slice("comparison:".length);
+  const source =
+    comparisons.find((candidate) => (candidate.comparison_id ?? candidate.run_ids.join("+")) === rest) ??
+    comparisons.find((candidate) => candidate.run_ids.join("+") === rest) ??
+    (/^\d+$/.test(rest) ? comparisons[Number(rest)] : undefined);
   if (!source) throw new Error(`Unknown comparison selection: ${selection}`);
   return { source, runs: source.runs, label: formatComparisonLabel(source) };
 }
 
-export function comparisonRowsFor(selection: RunSelection) {
-  const { runs } = getComparison(selection);
+export function comparisonRowsFor(dataset: ArtifactDataset, selection: RunSelection) {
+  const { runs } = getComparison(dataset, selection);
   const fields = [
     ["Median Output Speed", (run: CanonicalRunSummary) => run.speed.decode_tps.p50, (value: number | null | undefined) => formatNumber(value, " tok/s")],
     ["Median Time to First Token", (run: CanonicalRunSummary) => run.latency.ttft_ms.p50, (value: number | null | undefined) => formatNumber(value, " ms")],
@@ -102,14 +167,14 @@ export function comparisonRowsFor(selection: RunSelection) {
     ["Stream Completion Rate", (run: CanonicalRunSummary) => run.reliability.stream_completion_rate, formatPercent],
     ["Timeout Rate", (run: CanonicalRunSummary) => run.reliability.timeout_rate, formatPercent],
   ] as const;
-  return fields.map(([metric, valueFor, format]) => ({ metric, values: Object.fromEntries(runs.map((run) => [run.provider.id, format(valueFor(run))])), note: "" }));
+  return fields.map(([metric, valueFor, format]) => ({ metric, values: Object.fromEntries(runs.map((run) => [run.run_id, format(valueFor(run))])), note: "" }));
 }
 
-export function metricRowsFor(selection: RunSelection, metric: "score" | "decode_tps" | "effective_tps" | "ttft_ms" | "end_to_end_latency_ms" | "request_success_rate" | "timeout_rate") {
-  const { runs } = getComparison(selection);
+export function metricRowsFor(dataset: ArtifactDataset, selection: RunSelection, metric: "score" | "decode_tps" | "effective_tps" | "ttft_ms" | "end_to_end_latency_ms" | "request_success_rate" | "timeout_rate") {
+  const { runs } = getComparison(dataset, selection);
   return [{
     bench: metricLabel(metric),
-    ...Object.fromEntries(runs.map((run) => [run.provider.id, metricValue(run, metric)])),
+    ...Object.fromEntries(runs.map((run) => [run.run_id, metricValue(run, metric)])),
   }];
 }
 
@@ -128,13 +193,13 @@ function metricLabel(metric: string): string {
   return labels[metric] ?? metric;
 }
 
-export function contextRowsFor(selection: RunSelection, metric: "speed" | "latency" | "reliability") {
-  const { runs } = getComparison(selection);
+export function contextRowsFor(dataset: ArtifactDataset, selection: RunSelection, metric: "speed" | "latency" | "reliability") {
+  const { runs } = getComparison(dataset, selection);
   const buckets = runs.map((run) => run.context ?? {});
   const labels = Array.from(new Set(buckets.flatMap((context) => Object.keys(context))));
   return labels.map((label) => ({
     label,
-    ...Object.fromEntries(runs.map((run) => [run.provider.id, contextValue(run, metric, label)])),
+    ...Object.fromEntries(runs.map((run) => [run.run_id, contextValue(run, metric, label)])),
   }));
 }
 
@@ -152,24 +217,24 @@ export interface ComparisonTaskResult {
   results: Record<string, CanonicalTaskResult | undefined>;
 }
 
-export function taskResultsFor(selection: RunSelection): ComparisonTaskResult[] {
-  const { runs } = getComparison(selection);
+export function taskResultsFor(dataset: ArtifactDataset, selection: RunSelection): ComparisonTaskResult[] {
+  const { runs } = getComparison(dataset, selection);
   const groups = new Map<string, ComparisonTaskResult>();
   runs.forEach((run) => run.tasks.forEach((task) => {
     const key = `${task.task_id}:${task.trial_id ?? "unknown"}`;
     const group = groups.get(key) ?? { taskId: task.task_id, trialId: task.trial_id, results: {} };
-    group.results[run.provider.id] = task;
+    group.results[run.run_id] = task;
     groups.set(key, group);
   }));
   return Array.from(groups.values()).sort((a, b) => `${a.taskId}:${a.trialId}`.localeCompare(`${b.taskId}:${b.trialId}`));
 }
 
-export function tokenRowsFor(selection: RunSelection) {
-  const { runs } = getComparison(selection);
-  const keys = runs.flatMap((run) => [`${run.provider.id}-input`, `${run.provider.id}-output`, `${run.provider.id}-cache`]);
-  return runs.map((run) => ({
-    provider: run.provider.name,
-    ...Object.fromEntries(keys.map((key) => [key, key.startsWith(`${run.provider.id}-`) ? tokenValue(run, key.slice(run.provider.id.length + 1)) : null])),
+export function tokenRowsFor(dataset: ArtifactDataset, selection: RunSelection) {
+  const { runs } = getComparison(dataset, selection);
+  const keys = runs.flatMap((run) => [`${run.run_id}-input`, `${run.run_id}-output`, `${run.run_id}-cache`]);
+  return seriesFor(runs).map((item) => ({
+    provider: item.label,
+    ...Object.fromEntries(keys.map((key) => [key, key.startsWith(`${item.key}-`) ? tokenValue(item.run, key.slice(item.key.length + 1)) : null])),
   }));
 }
 
@@ -179,34 +244,41 @@ function tokenValue(run: CanonicalRunSummary, metric: string): number | null {
   return run.tokens.cache_read;
 }
 
-export function breakdownRowsFor(selection: RunSelection) {
-  const { runs } = getComparison(selection);
-  return runs.map((run) => ({ provider: run.provider.name, [`${run.provider.id}-timeout`]: toPercent(run.reliability.timeout_rate), [`${run.provider.id}-errors`]: toPercent(run.reliability.http_error_rate) }));
+export function breakdownRowsFor(dataset: ArtifactDataset, selection: RunSelection) {
+  const { runs } = getComparison(dataset, selection);
+  return seriesFor(runs).map((item) => ({ provider: item.label, [`${item.key}-timeout`]: toPercent(item.run.reliability.timeout_rate), [`${item.key}-errors`]: toPercent(item.run.reliability.http_error_rate) }));
 }
 
-export function chartConfigFor(runs: CanonicalRunSummary[] | typeof providers = providers) {
-  return Object.fromEntries(runs.map((item, index) => {
-    const provider = "provider" in item ? presentationFor(item.provider, index) : item;
-    return [provider.id, { label: provider.name, color: provider.color }];
-  }));
+export function chartConfigFor(runs: CanonicalRunSummary[]) {
+  return Object.fromEntries(seriesFor(runs).map((item) => [item.key, { label: item.label, color: item.color }]));
 }
 
-export function tokenConfigFor(selection: RunSelection) {
-  return Object.fromEntries(getComparison(selection).runs.flatMap((run, index) => {
-    const provider = presentationFor(run.provider, index);
-    return [[`${provider.id}-input`, { label: `${provider.name} Input`, color: provider.color }], [`${provider.id}-output`, { label: `${provider.name} Output`, color: provider.color }], [`${provider.id}-cache`, { label: `${provider.name} Cache`, color: provider.color }]];
-  }));
+export function tokenConfigFor(dataset: ArtifactDataset, selection: RunSelection) {
+  const runs = getComparison(dataset, selection).runs;
+  return Object.fromEntries(seriesFor(runs).flatMap((item) => [
+    [`${item.key}-input`, { label: `${item.label} Input`, color: item.color }],
+    [`${item.key}-output`, { label: `${item.label} Output`, color: item.color }],
+    [`${item.key}-cache`, { label: `${item.label} Cache`, color: item.color }],
+  ]));
 }
 
-export function breakdownConfigFor(selection: RunSelection) {
-  return Object.fromEntries(getComparison(selection).runs.flatMap((run, index) => {
-    const provider = presentationFor(run.provider, index);
-    return [[`${provider.id}-timeout`, { label: `${provider.name} Timeout`, color: provider.color }], [`${provider.id}-errors`, { label: `${provider.name} HTTP errors`, color: `${provider.color}99` }]];
-  }));
+export function breakdownConfigFor(dataset: ArtifactDataset, selection: RunSelection) {
+  const runs = getComparison(dataset, selection).runs;
+  return Object.fromEntries(seriesFor(runs).flatMap((item) => [
+    [`${item.key}-timeout`, { label: `${item.label} Timeout`, color: item.color }],
+    [`${item.key}-errors`, { label: `${item.label} HTTP errors`, color: `${item.color}99` }],
+  ]));
 }
 
 export function formatDate(value: string) {
   return new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+export function formatTime(value: string) {
+  const date = new Date(value);
+  const hours = String(date.getUTCHours()).padStart(2, "0");
+  const minutes = String(date.getUTCMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
 }
 
 function formatComparisonLabel(comparison: CanonicalComparison) {

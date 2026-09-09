@@ -1,0 +1,12 @@
+{
+  "schema_version": 2,
+  "comparison_id": "comparison-future",
+  "created_at_utc": "2027-01-01T00:00:00Z",
+  "benchmark": { "name": "terminal-bench", "version": "2.1" },
+  "run_ids": ["bench-future-a"],
+  "models": ["future-model"],
+  "execution_mode": "sequential",
+  "official_comparison": true,
+  "tokenizers_comparable": true,
+  "runs": []
+}

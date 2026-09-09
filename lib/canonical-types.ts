@@ -143,10 +143,20 @@ export function isCanonicalObject(value: unknown): value is Record<string, unkno
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export interface CanonicalTokenizerRef {
+  repo: string | null;
+  revision: string | null;
+  available: boolean | null;
+}
+
+export type TokenizerIdentityStatus = "known_equal" | "known_different" | "unknown";
+
 export interface CanonicalRunSummary {
   schema_version: number;
+  metric_revision?: number;
   run_id: string;
   created_at_utc: string;
+  tokenizer?: CanonicalTokenizerRef;
   benchmark: CanonicalBenchmark;
   provider: CanonicalProvider;
   model: string;
@@ -163,6 +173,7 @@ export interface CanonicalRunSummary {
 
 export interface CanonicalComparison {
   schema_version: number;
+  comparison_id?: string;
   created_at_utc: string;
   benchmark: Omit<CanonicalBenchmark, "task_count">;
   run_ids: string[];
@@ -170,5 +181,6 @@ export interface CanonicalComparison {
   execution_mode: ExecutionMode;
   official_comparison: boolean;
   tokenizers_comparable: boolean;
+  tokenizer_identity_status?: TokenizerIdentityStatus;
   runs: CanonicalRunSummary[];
 }
