@@ -1,6 +1,10 @@
 import Ajv from "ajv/dist/2020";
-import comparisonSchema from "@/schemas/comparison-v1.schema.json";
-import summarySchema from "@/schemas/summary-v1.schema.json";
+// Single physical source: the Python producer owns these schemas at
+// src/benching/benchmark/schemas/. They are bundled into the dashboard at
+// build time via this static import, so production needs no Python runtime
+// and no checked-in duplicate.
+import comparisonSchema from "../../src/benching/benchmark/schemas/comparison-v1.schema.json";
+import summarySchema from "../../src/benching/benchmark/schemas/summary-v1.schema.json";
 import {
   isCanonicalObject,
   type CanonicalComparison,

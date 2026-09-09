@@ -1,12 +1,12 @@
 # Dashboard contract test fixtures
 
-`summary-fireworks-a.json`, `summary-fireworks-b.json`, and
-`comparison-fireworks-ab.json` are synchronized copies of
-`benching/examples/artifacts/` (authoritative producer output: same
-provider, distinct runs, decode p50 10 vs 90 tok/s). Do not hand-edit;
-run `npm run contract:sync` (M3 monorepo migration removes this step).
+Valid artifacts are read directly from the authoritative producer corpus
+at `examples/artifacts/` (same provider, distinct runs, decode p50 10 vs
+90 tok/s). There are no synchronized copies: `lib/contract.ts` likewise
+imports the producer-owned schemas at
+`src/benching/benchmark/schemas/` with no duplicate.
 
-The remaining fixtures are handwritten edge cases:
+Only dashboard-specific edge cases live here:
 
 - `summary-malformed.json`: valid summary with `"speed": {}` (audit H4
   reproduction: must be rejected before rendering, never crash it).

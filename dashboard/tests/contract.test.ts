@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -11,46 +11,29 @@ import {
 } from "@/lib/contract";
 import type { CanonicalComparison, CanonicalRunSummary } from "@/lib/canonical-types";
 
-const root = path.join(__dirname, "..");
-const schemasDir = path.join(root, "schemas");
+// Monorepo-local authoritative inputs, no copies and no out-of-repo fallback:
+// schemas are owned by the Python producer, the valid corpus by examples/.
+const repoRoot = path.join(__dirname, "..", "..");
+const schemasDir = path.join(repoRoot, "src", "benching", "benchmark", "schemas");
+const corpus = path.join(repoRoot, "examples", "artifacts");
 const fixtures = path.join(__dirname, "fixtures");
-const benching = path.resolve(root, "..", "benching");
 
 function readJson(file: string): unknown {
   return JSON.parse(readFileSync(file, "utf8"));
 }
 
-test("synced schemas match the authoritative producer source", () => {
+test("authoritative producer schemas are the single source", () => {
   for (const name of ["summary-v1.schema.json", "comparison-v1.schema.json"]) {
-    const source = path.join(benching, "src", "benching", "benchmark", "schemas", name);
-    if (!existsSync(source)) {
-      console.log(`skip: no benching checkout at ${source}`);
-      continue;
-    }
-    assert.equal(
-      readFileSync(path.join(schemasDir, name), "utf8"),
-      readFileSync(source, "utf8"),
-      `${name} drifted from benching/src/benching/benchmark/schemas`
-    );
+    const schema = readJson(path.join(schemasDir, name)) as { $id?: string };
+    assert.match(schema.$id ?? "", /benching\//, `${name} carries the producer $id`);
   }
 });
 
-test("synced example fixtures match the producer corpus", () => {
-  for (const name of ["summary-fireworks-a.json", "summary-fireworks-b.json", "comparison-fireworks-ab.json"]) {
-    const source = path.join(benching, "examples", "artifacts", name);
-    if (!existsSync(source)) {
-      console.log(`skip: no benching checkout at ${source}`);
-      continue;
-    }
-    assert.equal(readFileSync(path.join(fixtures, name), "utf8"), readFileSync(source, "utf8"), `${name} drifted`);
-  }
-});
-
-test("valid corpus passes schema validation", () => {
+test("valid producer corpus passes dashboard schema validation", () => {
   for (const name of ["summary-fireworks-a.json", "summary-fireworks-b.json"]) {
-    assert.deepEqual(summarySchemaErrors(readJson(path.join(fixtures, name))), []);
+    assert.deepEqual(summarySchemaErrors(readJson(path.join(corpus, name))), []);
   }
-  assert.deepEqual(comparisonSchemaErrors(readJson(path.join(fixtures, "comparison-fireworks-ab.json"))), []);
+  assert.deepEqual(comparisonSchemaErrors(readJson(path.join(corpus, "comparison-fireworks-ab.json"))), []);
 });
 
 test("malformed nested metric fails with a concise diagnostic", () => {
@@ -61,20 +44,20 @@ test("malformed nested metric fails with a concise diagnostic", () => {
 });
 
 test("embedded identity mismatch is caught", () => {
-  const comparison = readJson(path.join(fixtures, "comparison-fireworks-ab.json")) as CanonicalComparison;
+  const comparison = readJson(path.join(corpus, "comparison-fireworks-ab.json")) as CanonicalComparison;
   assert.deepEqual(comparisonIdentityErrors(comparison), []);
   const broken = { ...comparison, run_ids: [...comparison.run_ids, "bench-ghost"] };
   assert.deepEqual(comparisonIdentityErrors(broken).length, 1);
 });
 
 test("projection strips unknown fields and stays schema-valid", () => {
-  const raw = readJson(path.join(fixtures, "summary-fireworks-a.json")) as Record<string, unknown>;
+  const raw = readJson(path.join(corpus, "summary-fireworks-a.json")) as Record<string, unknown>;
   raw.private_secret = "DO_NOT_EXPOSE";
   (raw.tokens as Record<string, unknown>).evil = "DO_NOT_EXPOSE";
   const projected = projectSummary(raw as unknown as CanonicalRunSummary);
   assert.ok(!JSON.stringify(projected).includes("DO_NOT_EXPOSE"));
   assert.deepEqual(summarySchemaErrors(projected), []);
-  const rawComparison = readJson(path.join(fixtures, "comparison-fireworks-ab.json")) as Record<string, unknown>;
+  const rawComparison = readJson(path.join(corpus, "comparison-fireworks-ab.json")) as Record<string, unknown>;
   rawComparison.private_secret = "DO_NOT_EXPOSE";
   const projectedComparison = projectComparison(rawComparison as unknown as CanonicalComparison);
   assert.ok(!JSON.stringify(projectedComparison).includes("DO_NOT_EXPOSE"));
@@ -92,9 +75,9 @@ test("projection preserves provenance and new optional fields", () => {
 });
 
 function readFixtureSummaryA(): CanonicalRunSummary {
-  return readJson(path.join(fixtures, "summary-fireworks-a.json")) as CanonicalRunSummary;
+  return readJson(path.join(corpus, "summary-fireworks-a.json")) as CanonicalRunSummary;
 }
 
 function readFixtureComparison(): CanonicalComparison {
-  return readJson(path.join(fixtures, "comparison-fireworks-ab.json")) as CanonicalComparison;
+  return readJson(path.join(corpus, "comparison-fireworks-ab.json")) as CanonicalComparison;
 }

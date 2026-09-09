@@ -267,6 +267,7 @@ def test_wheel_contains_namespaced_package(dist_dir) -> None:
         assert required in names, required
     for legacy in ("benchmark/", "analytics/", "proxy/", "agents/", "cli/", "config/", "schemas/"):
         assert not any(name == legacy or name.startswith(legacy) for name in names), legacy
+    assert not any(name == "dashboard/" or name.startswith("dashboard/") for name in names)
 
 
 def test_sdist_contains_resources(dist_dir) -> None:
@@ -277,6 +278,7 @@ def test_sdist_contains_resources(dist_dir) -> None:
     assert any(name.endswith("benching/benchmark/schemas/summary-v1.schema.json") for name in names)
     assert any(name.endswith("benching/benchmark/schemas/comparison-v1.schema.json") for name in names)
     assert any(name.endswith("src/benching/benchmark/runner.py") for name in names)
+    assert not any("/dashboard/" in name or name.endswith("/dashboard") for name in names)
 
 
 def test_fresh_install_namespace_imports(installed, tmp_path) -> None:

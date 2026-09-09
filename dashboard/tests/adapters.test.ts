@@ -19,16 +19,17 @@ import {
 import { projectComparison, projectSummary } from "@/lib/contract";
 import type { CanonicalComparison, CanonicalRunSummary } from "@/lib/canonical-types";
 
-const fixtures = path.join(__dirname, "fixtures");
+// Authoritative producer corpus at the repository root.
+const corpusDir = path.join(__dirname, "..", "..", "examples", "artifacts");
 
-function readFixture(name: string): unknown {
-  return JSON.parse(readFileSync(path.join(fixtures, name), "utf8"));
+function readCorpus(name: string): unknown {
+  return JSON.parse(readFileSync(path.join(corpusDir, name), "utf8"));
 }
 
 function corpus(): { a: CanonicalRunSummary; b: CanonicalRunSummary; comparison: CanonicalComparison } {
-  const a = projectSummary(readFixture("summary-fireworks-a.json") as CanonicalRunSummary);
-  const b = projectSummary(readFixture("summary-fireworks-b.json") as CanonicalRunSummary);
-  const comparison = projectComparison(readFixture("comparison-fireworks-ab.json") as CanonicalComparison);
+  const a = projectSummary(readCorpus("summary-fireworks-a.json") as CanonicalRunSummary);
+  const b = projectSummary(readCorpus("summary-fireworks-b.json") as CanonicalRunSummary);
+  const comparison = projectComparison(readCorpus("comparison-fireworks-ab.json") as CanonicalComparison);
   return { a, b, comparison };
 }
 

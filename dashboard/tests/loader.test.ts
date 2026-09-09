@@ -6,9 +6,15 @@ import assert from "node:assert/strict";
 import { loadArtifactsFromDirectory } from "@/lib/artifact-loader";
 
 const fixtures = path.join(__dirname, "fixtures");
+// Authoritative producer corpus; negatives stay dashboard-local in fixtures/.
+const corpus = path.join(__dirname, "..", "..", "examples", "artifacts");
 
 function readFixture(name: string): unknown {
   return JSON.parse(readFileSync(path.join(fixtures, name), "utf8"));
+}
+
+function readCorpus(name: string): unknown {
+  return JSON.parse(readFileSync(path.join(corpus, name), "utf8"));
 }
 
 function writeRun(dir: string, name: string, summary: unknown): void {
@@ -19,9 +25,9 @@ function writeRun(dir: string, name: string, summary: unknown): void {
 
 test("valid corpus loads with no notices", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "benching-"));
-  writeRun(dir, "run-a", readFixture("summary-fireworks-a.json"));
-  writeRun(dir, "run-b", readFixture("summary-fireworks-b.json"));
-  writeFileSync(path.join(dir, "comparison-fireworks-ab.json"), JSON.stringify(readFixture("comparison-fireworks-ab.json")));
+  writeRun(dir, "run-a", readCorpus("summary-fireworks-a.json"));
+  writeRun(dir, "run-b", readCorpus("summary-fireworks-b.json"));
+  writeFileSync(path.join(dir, "comparison-fireworks-ab.json"), JSON.stringify(readCorpus("comparison-fireworks-ab.json")));
   const artifacts = loadArtifactsFromDirectory(dir);
   assert.equal(artifacts.summaries.length, 2);
   assert.equal(artifacts.comparisons.length, 1);
@@ -31,7 +37,7 @@ test("valid corpus loads with no notices", () => {
 
 test("malformed nested metric is invalid, valid runs still render", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "benching-"));
-  writeRun(dir, "run-a", readFixture("summary-fireworks-a.json"));
+  writeRun(dir, "run-a", readCorpus("summary-fireworks-a.json"));
   writeRun(dir, "run-bad", readFixture("summary-malformed.json"));
   const artifacts = loadArtifactsFromDirectory(dir);
   assert.equal(artifacts.summaries.length, 1);
@@ -43,10 +49,10 @@ test("malformed nested metric is invalid, valid runs still render", () => {
 
 test("missing required field and wrong type are invalid", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "benching-"));
-  const missing = readFixture("summary-fireworks-a.json") as Record<string, unknown>;
+  const missing = readCorpus("summary-fireworks-a.json") as Record<string, unknown>;
   delete missing.run_id;
   writeRun(dir, "run-a", missing);
-  const wrongType = readFixture("summary-fireworks-b.json") as Record<string, unknown>;
+  const wrongType = readCorpus("summary-fireworks-b.json") as Record<string, unknown>;
   (wrongType as Record<string, unknown>).tasks = "nope";
   writeRun(dir, "run-b", wrongType);
   const artifacts = loadArtifactsFromDirectory(dir);
@@ -57,7 +63,7 @@ test("missing required field and wrong type are invalid", () => {
 
 test("future major version is unsupported, not malformed", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "benching-"));
-  writeRun(dir, "run-a", readFixture("summary-fireworks-a.json"));
+  writeRun(dir, "run-a", readCorpus("summary-fireworks-a.json"));
   writeFileSync(path.join(dir, "comparison-v2.json"), JSON.stringify(readFixture("comparison-v2.json")));
   const artifacts = loadArtifactsFromDirectory(dir);
   assert.equal(artifacts.summaries.length, 1);
@@ -69,8 +75,8 @@ test("future major version is unsupported, not malformed", () => {
 
 test("embedded run id mismatch invalidates only that comparison", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "benching-"));
-  writeRun(dir, "run-a", readFixture("summary-fireworks-a.json"));
-  const comparison = readFixture("comparison-fireworks-ab.json") as { run_ids: string[] };
+  writeRun(dir, "run-a", readCorpus("summary-fireworks-a.json"));
+  const comparison = readCorpus("comparison-fireworks-ab.json") as { run_ids: string[] };
   comparison.run_ids = ["bench-example-fireworks-a", "bench-example-fireworks-ZZZ"];
   writeFileSync(path.join(dir, "comparison-broken.json"), JSON.stringify(comparison));
   const artifacts = loadArtifactsFromDirectory(dir);
@@ -82,7 +88,7 @@ test("embedded run id mismatch invalidates only that comparison", () => {
 
 test("unknown private fields are stripped before adapters", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "benching-"));
-  const sneaky = JSON.parse(JSON.stringify(readFixture("summary-fireworks-a.json"))) as Record<string, unknown>;
+  const sneaky = JSON.parse(JSON.stringify(readCorpus("summary-fireworks-a.json"))) as Record<string, unknown>;
   sneaky.private_secret = "DO_NOT_EXPOSE";
   (sneaky.tokens as Record<string, unknown>).evil = "DO_NOT_EXPOSE";
   (sneaky.tasks as Array<Record<string, unknown>>)[0].notes = "DO_NOT_EXPOSE";
@@ -110,7 +116,7 @@ test("missing directory yields an unreadable notice, not a crash", () => {
 
 test("unreadable artifact file is surfaced without crashing siblings", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "benching-"));
-  writeRun(dir, "run-a", readFixture("summary-fireworks-a.json"));
+  writeRun(dir, "run-a", readCorpus("summary-fireworks-a.json"));
   writeFileSync(path.join(dir, "comparison-broken.json"), "{oops");
   const artifacts = loadArtifactsFromDirectory(dir);
   assert.equal(artifacts.summaries.length, 1);

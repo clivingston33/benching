@@ -4,10 +4,30 @@ Benchmark LLM API providers against terminal-agent task suites: run a task suite
 
 The installed package ships an immutable default benchmark manifest; user state, registered providers, credentials, and local benchmark manifests live under `~/.config/benching/` (overridable via `BENCHING_CONFIG_DIR`), and benchmark runs live under `./runs` (overridable via `BENCHING_RUNS_DIR`). Runtime data never lives inside the installed package.
 
+## Project components
+
+```text
+Benching
+├── CLI / benchmark engine   (Python: src/benching/)
+└── Dashboard                (Next.js: dashboard/, optional)
+```
+
+The CLI performs benchmark execution and analysis; the dashboard
+visualizes canonical artifacts. They share this repository but build,
+version, and deploy independently: `pip install .` needs no Node, and the
+dashboard (`cd dashboard && npm ci && npm run build`) needs no Python
+runtime. The only connection is artifacts: Python produces canonical
+`summary.json` / `comparison-*.json` files, the dashboard consumes them
+read-only via `BENCHING_DATA_DIR`. The dashboard never runs inference.
+
+Releases are independent dimensions: `benching` version (pyproject),
+dashboard version (`dashboard/package.json`), artifact contract version
+(`schema_version`; tags like `benching-v0.x.y`, `dashboard-v0.x.y`).
+
 ## Layout
 
 ```text
-cli/                       Typer command layer (thin: parse, call, render)
+src/benching/cli/          Typer command layer (thin: parse, call, render)
   app.py                   benching app + entry point
   shell.py                 interactive slash-command shell
   doctor.py                benching doctor
@@ -18,7 +38,7 @@ cli/                       Typer command layer (thin: parse, call, render)
   results.py               benching results
   tokenizer.py             benching tokenizer
   run.py, compare.py       benching run / compare leaf commands
-benchmark/                 execution and registry layers
+src/benching/benchmark/    execution and registry layers
   config.py                suite identity + merged provider config
   state.py                 persistent user defaults
   providers.py             provider registry mutations
@@ -28,11 +48,12 @@ benchmark/                 execution and registry layers
   concurrency.py            staged concurrency probe
   tokenizer.py              pinned tokenizer cache
   _paths.py                shared repo/runtime paths
-proxy/telemetry_proxy.py   OpenAI-compatible streaming proxy; per-run JSONL telemetry
-analytics/analyze.py       normalize telemetry; build metrics.jsonl + comparison JSON
-agents/instrumented_omp_agent.py  Harbor agent driving OMP through the proxy
-benchmark/resources/     packaged immutable defaults (benchmark YAML, env example)
-benchmark/schemas/       authoritative summary/comparison JSON Schemas
+src/benching/proxy/telemetry_proxy.py  OpenAI-compatible streaming proxy; per-run JSONL telemetry
+src/benching/analytics/analyze.py      normalize telemetry; build metrics.jsonl + comparison JSON
+src/benching/agents/instrumented_omp_agent.py  Harbor agent driving OMP through the proxy
+src/benching/benchmark/resources/  packaged immutable defaults (benchmark YAML, env example)
+src/benching/benchmark/schemas/    authoritative summary/comparison JSON Schemas
+dashboard/                 Next.js artifact viewer (see dashboard/README.md)
 ```
 
 The CLI modules contain almost no benchmark logic: they parse arguments, call the `benchmark/` layer, and render results. A dashboard can import the same `benchmark/` functions.
@@ -326,6 +347,11 @@ analytics/analyze.py -> metrics.jsonl and comparison JSON
 ```
 
 A live progress dashboard is a later milestone: `benchmark.runner.run_one` already reports deterministic `(phase, message)` progress events through an optional callback, and the CLI renders them as status lines; a dashboard can subscribe to the same hook.
+
+## Issue labels
+
+GitHub issues use `core` (Python engine), `dashboard` (Next.js viewer),
+`contract` (schemas/artifacts shared by both), and `docs`.
 
 ## History
 

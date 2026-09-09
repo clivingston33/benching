@@ -1,18 +1,17 @@
-"""M2-task-7 contract tests: schemas, invariants, fixtures, sync.
+"""M2-task-7 contract tests: schemas, invariants, fixtures, single source.
 
-Producer side of the cross-repo contract gate. Dashboard-side checks live
-in benching-dashboard/tests. Shared corpora stay byte-identical while both
-repos are checked out together; sync assertions skip otherwise.
+Producer side of the monorepo contract gate. Dashboard-side checks live in
+dashboard/tests. Schemas and the valid corpus have one physical source;
+there are no synchronized copies and no sibling-checkout skips.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-import pytest
-
-EXAMPLES = Path(__file__).resolve().parents[1] / "examples" / "artifacts"
-DASHBOARD = Path(__file__).resolve().parents[1].parent / "benching-dashboard"
+REPO = Path(__file__).resolve().parents[1]
+EXAMPLES = REPO / "examples" / "artifacts"
+DASHBOARD = REPO / "dashboard"
 
 VOCAB = {f"w{i}": i for i in range(100)}
 VOCAB["[UNK]"] = 100
@@ -121,8 +120,6 @@ def test_old_valid_fixtures_still_pass() -> None:
     assert validate_summary(old_summary) == []
     dashboard_summary = DASHBOARD / "data" / "summary.json"
     dashboard_comparison = DASHBOARD / "data" / "comparison-20260102.json"
-    if not dashboard_summary.is_file():
-        pytest.skip("benching-dashboard checkout not present")
     assert validate_summary(json.loads(dashboard_summary.read_text(encoding="utf-8"))) == []
     assert validate_comparison(json.loads(dashboard_comparison.read_text(encoding="utf-8"))) == []
     assert check_summary_invariants(old_summary) == []
@@ -237,21 +234,18 @@ def test_examples_contain_no_machine_secrets() -> None:
         assert run_doc["tokenizer"]["local_cache"] is None
 
 
-def test_schemas_in_sync_with_dashboard() -> None:
+def test_contract_wiring_is_single_source() -> None:
     import benching.benchmark
 
-    dashboard_schemas = DASHBOARD / "schemas"
-    if not dashboard_schemas.is_dir():
-        pytest.skip("benching-dashboard schemas not present")
+    assert not (DASHBOARD / "schemas").exists(), "dashboard must not keep synchronized schema copies"
+    assert not (DASHBOARD / "scripts" / "sync-contract.mjs").exists()
     package_schemas = Path(benching.benchmark.__file__).resolve().parent / "schemas"
+    contract_text = (DASHBOARD / "lib" / "contract.ts").read_text(encoding="utf-8")
     for name in ("summary-v1.schema.json", "comparison-v1.schema.json"):
-        assert (package_schemas / name).read_bytes() == (dashboard_schemas / name).read_bytes()
-
-
-def test_examples_in_sync_with_dashboard() -> None:
-    dashboard_fixtures = DASHBOARD / "tests" / "fixtures"
-    if not dashboard_fixtures.is_dir():
-        pytest.skip("benching-dashboard fixtures not present")
+        assert (package_schemas / name).is_file()
+        assert name in contract_text
     for name in ("summary-fireworks-a.json", "summary-fireworks-b.json", "comparison-fireworks-ab.json"):
-        assert (EXAMPLES / name).read_bytes() == (dashboard_fixtures / name).read_bytes()
+        assert not (DASHBOARD / "tests" / "fixtures" / name).exists(), f"duplicate fixture {name}"
+    dashboard_tests = " ".join(path.read_text(encoding="utf-8") for path in (DASHBOARD / "tests").glob("*.test.ts"))
+    assert '"examples", "artifacts"' in dashboard_tests
 
