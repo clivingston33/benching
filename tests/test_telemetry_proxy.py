@@ -4,7 +4,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from proxy.telemetry_proxy import ChunkDecoder, JsonlWriter, Proxy, SseParser, join_upstream_path, load_routes, redact, update_usage
+from benching.proxy.telemetry_proxy import ChunkDecoder, JsonlWriter, Proxy, SseParser, join_upstream_path, load_routes, redact, update_usage
 
 
 class _FakeWriter:
@@ -61,7 +61,7 @@ def test_usage_preserves_provider_values() -> None:
 def test_reasoning_disabled_injected_into_forwarded_body(tmp_path: Path) -> None:
     # reasoning: disabled injects reasoning.enabled=false so providers defaulting
     # to reasoning-on match the explicit disabled mode.
-    import proxy.telemetry_proxy as mod
+    import benching.proxy.telemetry_proxy as mod
 
     captured: dict = {}
 
@@ -86,7 +86,7 @@ def test_reasoning_disabled_injected_into_forwarded_body(tmp_path: Path) -> None
 
 def test_reasoning_default_not_injected_into_forwarded_body(tmp_path: Path) -> None:
     # reasoning: default must not inject any override; the provider behaves normally.
-    import proxy.telemetry_proxy as mod
+    import benching.proxy.telemetry_proxy as mod
 
     captured: dict = {}
 
@@ -122,3 +122,4 @@ def test_routes_reject_non_https(tmp_path: Path) -> None:
         assert "invalid upstream" in str(exc)
     else:
         raise AssertionError("insecure route accepted")
+

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-import benchmark.concurrency as probe
+import benching.benchmark.concurrency as probe
 
 
 def test_parse_stream_detects_content_and_finish() -> None:
@@ -36,3 +36,4 @@ def test_staged_probe_stops_after_first_rejected_stage(tmp_path, monkeypatch) ->
     assert summary["rejection_status"] == 429
     assert summary["limit_verified"] is True
     assert len(jsonl_path.read_text().splitlines()) == 2
+

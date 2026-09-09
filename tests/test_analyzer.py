@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import pytest
-from analytics.analyze import compatible, distribution, local_count, local_tokenizer, normalize, normalize_runs
+from benching.analytics.analyze import compatible, distribution, local_count, local_tokenizer, normalize, normalize_runs
 
 
 class FakeEncoding:
@@ -173,11 +173,13 @@ def test_normalize_writes_canonical_dashboard_summary_with_unavailable_local_met
     summary = json.loads((directory / "summary.json").read_text(encoding="utf-8"))
 
     assert comparison["models"] == ["api-model-1"]
-    assert set(summary) == {
+    assert {
         "schema_version", "run_id", "created_at_utc", "benchmark", "provider",
         "model", "reasoning", "execution", "score", "speed", "latency",
         "reliability", "tokens", "context", "tasks",
-    }
+    } <= set(summary)
+    assert summary["metric_revision"] == 2
+    assert summary["tokenizer"] == {"repo": "org/tokenizer", "revision": "rev-1", "available": False}
     assert summary["schema_version"] == 1
     assert summary["run_id"] == "run-1"
     assert summary["created_at_utc"] == "2026-01-02T03:04:05Z"
@@ -196,5 +198,16 @@ def test_normalize_writes_canonical_dashboard_summary_with_unavailable_local_met
     assert summary["speed"]["decode_tps"]["mean"] is None
     assert summary["speed"]["effective_tps"]["mean"] is None
     assert summary["context"]["0-4K"]["requests"] == 1
-    assert summary["tasks"][0]["task_id"] == "task-1"
-    assert summary["tasks"][0]["requests"] == 1
+    observed = [task for task in summary["tasks"] if task["trial_id"] == "trial-1"]
+    assert len(observed) == 1
+    assert observed[0]["task_id"] == "task-1"
+    assert observed[0]["requests"] == 1
+    # trials=2 with one observed trial: the unobserved planned attempt is an
+    # explicit missing entry, not a silent drop and not a failure.
+    missing = [task for task in summary["tasks"] if task["trial_id"] is None]
+    assert len(missing) == 1
+    assert missing[0]["task_id"] == "task-1"
+    assert missing[0]["requests"] == 0
+    assert missing[0]["passed"] is None
+    assert missing[0]["reward"] is None
+

@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from benchmark.runner import RunProgress
-from benchmark.status import ProgressEvent, scan_harbor_results
+from benching.benchmark.runner import RunProgress
+from benching.benchmark.status import ProgressEvent, scan_harbor_results
 
 
 def _write_result(jobs_dir: Path, subdir: str, task: str, reward=None, exception=None) -> None:
@@ -25,10 +25,10 @@ def test_scan_harbor_results_counts_outcomes(tmp_path: Path) -> None:
     _write_result(jobs, "job-3", "task-c", exception="VerifierTimeoutError")
     _write_result(jobs, "job-4", "task-d", reward=None)
     results = scan_harbor_results(jobs)
-    assert results["task-a"]["outcome"] == "passed"
-    assert results["task-b"]["outcome"] == "failed"
-    assert results["task-c"]["outcome"] == "timed_out"
-    assert results["task-d"]["outcome"] == "failed"
+    assert results[("task-a", None)]["outcome"] == "passed"
+    assert results[("task-b", None)]["outcome"] == "failed"
+    assert results[("task-c", None)]["outcome"] == "timed_out"
+    assert results[("task-d", None)]["outcome"] == "failed"
 
 
 def test_run_progress_refresh_aggregates(tmp_path: Path) -> None:
@@ -50,3 +50,4 @@ def test_progress_event_carries_structured_fields() -> None:
     assert event.total == 89
     assert event.run_dir == "/tmp/run"
     assert event.elapsed_seconds == 12.5
+

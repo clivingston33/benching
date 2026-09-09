@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from benchmark.benchmarks import active_root_config, add_benchmark, list_benchmarks, remove_benchmark, set_active_benchmark
-from benchmark.config import enabled_providers, load_yaml, provider_env_values, resolve
-from benchmark.providers import add_provider, remove_provider, set_active_provider, update_provider
-from benchmark.state import load_state, update_state
+from benching.benchmark.benchmarks import active_root_config, add_benchmark, list_benchmarks, remove_benchmark, set_active_benchmark
+from benching.benchmark.config import enabled_providers, load_yaml, provider_env_values, resolve
+from benching.benchmark.providers import add_provider, remove_provider, set_active_provider, update_provider
+from benching.benchmark.state import load_state, update_state
 
 
 def test_user_state_round_trip() -> None:
@@ -44,7 +44,7 @@ def test_benchmark_registry_becomes_active_root(tmp_path: Path) -> None:
             "name": "My Suite",
             "version": "1.0",
             "tasks_dir": str(tasks),
-            "agent": "agents.instrumented_omp_agent:InstrumentedOmpAgent",
+            "agent": "benching.agents.instrumented_omp_agent:InstrumentedOmpAgent",
             "model": "model-x",
             "reasoning": "default",
             "expected_task_count": 1,
@@ -64,7 +64,7 @@ def test_benchmark_registry_becomes_active_root(tmp_path: Path) -> None:
 
 
 def test_shell_dispatch_persists_session_defaults() -> None:
-    from cli.shell import Session, dispatch
+    from benching.cli.shell import Session, dispatch
 
     session = Session.from_state(load_state())
     assert dispatch(session, "/concurrency 7")
@@ -75,18 +75,18 @@ def test_shell_dispatch_persists_session_defaults() -> None:
 
 
 def test_shell_provider_validation_failure_does_not_exit(monkeypatch) -> None:
-    from cli.shell import Session, dispatch
+    from benching.cli.shell import Session, dispatch
 
     def fail(*args, **kwargs):
         raise SystemExit("provider unavailable")
 
-    monkeypatch.setattr("benchmark.providers.validate_registered_provider", fail)
+    monkeypatch.setattr("benching.benchmark.providers.validate_registered_provider", fail)
     session = Session.from_state(load_state())
     assert dispatch(session, "/provider validate acme")
 
 
 def test_doctor_uses_active_benchmark(monkeypatch, tmp_path: Path) -> None:
-    import benchmark.doctor as doctor
+    import benching.benchmark.doctor as doctor
 
     tasks = tmp_path / "active-tasks"
     tasks.mkdir()
@@ -99,12 +99,13 @@ def test_doctor_uses_active_benchmark(monkeypatch, tmp_path: Path) -> None:
                 "name": "my-suite",
                 "version": "1.0",
                 "tasks_dir": str(tasks),
-                "agent": "agents.instrumented_omp_agent:InstrumentedOmpAgent",
+                "agent": "benching.agents.instrumented_omp_agent:InstrumentedOmpAgent",
             }
         },
     )
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    monkeypatch.setattr(doctor, "resolve_executable", lambda name: None)
     monkeypatch.setattr(doctor, "tokenizer_metadata", lambda spec: {"source": "unavailable"})
     results = {item["name"]: item for item in doctor.checks()}
     assert results["Tasks"]["detail"] == "1 found"
     assert results["Tokenizer"]["detail"] == "not cached"
+

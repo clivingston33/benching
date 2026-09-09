@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from benchmark.config import BenchmarkSpec, benchmark_spec, load_yaml, resolve, resolve_model_settings
-from benchmark.runner import RunOptions, harbor_command
-from benchmark.validation import classify_validation, parse_stream_body
+from benching.benchmark.config import BenchmarkSpec, benchmark_spec, load_yaml, resolve, resolve_model_settings
+from benching.benchmark.runner import RunOptions, harbor_command
+from benching.benchmark.validation import classify_validation, parse_stream_body
 
 
 def make_spec(**overrides) -> BenchmarkSpec:
@@ -17,7 +17,7 @@ def make_spec(**overrides) -> BenchmarkSpec:
         tasks_dir="~/task-suite/tasks",
         expected_task_count=2,
         smoke_tasks=("task-a",),
-        agent="agents.instrumented_omp_agent:InstrumentedOmpAgent",
+        agent="benching.agents.instrumented_omp_agent:InstrumentedOmpAgent",
         max_tokens=49152,
         context_window=262144,
         run_id_prefix="bench",
@@ -40,7 +40,7 @@ def test_benchmark_spec_reads_full_identity_from_config() -> None:
     assert spec.tasks_dir.name == "tasks"
     assert spec.expected_task_count == 89
     assert len(spec.smoke_tasks) == 3
-    assert spec.agent == "agents.instrumented_omp_agent:InstrumentedOmpAgent"
+    assert spec.agent == "benching.agents.instrumented_omp_agent:InstrumentedOmpAgent"
     assert spec.max_tokens is None
     assert spec.context_window is None
     assert spec.run_id_prefix == "bench"
@@ -56,7 +56,7 @@ def test_config_ships_with_no_enabled_providers() -> None:
 
 
 def test_harbor_command_preserves_agent_kwargs(tmp_path, monkeypatch) -> None:
-    import benchmark.runner as runner
+    import benching.benchmark.runner as runner
 
     monkeypatch.setattr(runner, "executable", lambda name: name)
     spec = make_spec(expected_task_count=None)
@@ -68,6 +68,7 @@ def test_harbor_command_preserves_agent_kwargs(tmp_path, monkeypatch) -> None:
         "acme-model-1",
         tmp_path,
         ["task-a"],
+        proxy_auth_token="test-token",
     )
     kwargs = [command[index + 1] for index, value in enumerate(command) if value == "--agent-kwarg"]
     assert kwargs == [
@@ -79,6 +80,7 @@ def test_harbor_command_preserves_agent_kwargs(tmp_path, monkeypatch) -> None:
         "api_key_env=ACME_API_KEY",
         f"run_id={tmp_path.name}",
         "proxy_url=http://host.docker.internal:8765",
+        "proxy_auth_token=test-token",
         "api=openai-completions",
         "reasoning=default",
         "max_tokens=49152",
@@ -123,9 +125,9 @@ def test_provider_model_defaults_override_benchmark_execution_defaults() -> None
 
 
 def test_run_metadata_records_effective_setting_sources(tmp_path, monkeypatch) -> None:
-    import benchmark.runner as runner
+    import benching.benchmark.runner as runner
 
-    monkeypatch.setattr(runner, "RUNS", tmp_path)
+    monkeypatch.setattr(runner, "runs_root", lambda: tmp_path)
     spec = make_spec(tokenizer_repo="", tokenizer_revision="", max_tokens=None, context_window=None)
     settings = resolve_model_settings(
         {"default_model": "provider-model", "model_defaults": {"max_tokens": 8192}},
@@ -167,12 +169,14 @@ def test_stream_validation_detects_reasoning_or_text() -> None:
 
 def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) -> None:
     """run_one reports deterministic preflight phases through the hook."""
-    import benchmark.runner as runner
+    import benching.benchmark.runner as runner
 
     calls: list[tuple[str, str]] = []
+    # Orchestration mechanics under test with mocked children; real benchmark
+    # execution still requires Linux/WSL (see benchmark.lifecycle).
+    monkeypatch.setenv("BENCHING_ALLOW_UNSUPPORTED_PLATFORM", "1")
     monkeypatch.setattr(runner, "executable", lambda name: None)
-    monkeypatch.setattr(runner, "start_proxy", lambda directory, port=8765: None)
-    monkeypatch.setattr(runner, "stop_process", lambda process: None)
+    monkeypatch.setattr(runner, "start_proxy", lambda directory, port=8765, auth_token="", timeout=10.0: None)
     monkeypatch.setattr(runner, "validate_provider", lambda *args, **kwargs: {"success": True})
     monkeypatch.setattr(runner, "task_names", lambda mode, spec: ["task-a"])
     monkeypatch.setattr(runner, "environment", lambda config, values=None: {})
@@ -188,12 +192,15 @@ def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) ->
         def __init__(self, command, **kwargs):
             captured["command"] = command
 
-        def wait(self):
+        def poll(self):
             return 0
 
-    monkeypatch.setattr(runner.subprocess, "Popen", _FakePopen)
+        def wait(self, timeout=None):
+            return 0
 
-    config = {"benchmark": {"name": "suite", "version": "1", "model": "model-x", "reasoning": "default", "tasks_dir": "~/nonexistent/tasks", "smoke_tasks": ["task-a"], "tokenizer": {"repo": "org/t", "revision": "0123456789abcdef"}, "agent": "agents.instrumented_omp_agent:InstrumentedOmpAgent", "max_tokens": 1, "context_window": 2, "run_id_prefix": "bench"}}
+    monkeypatch.setattr(runner, "spawn_owned", _FakePopen)
+
+    config = {"benchmark": {"name": "suite", "version": "1", "model": "model-x", "reasoning": "default", "tasks_dir": "~/nonexistent/tasks", "smoke_tasks": ["task-a"], "tokenizer": {"repo": "org/t", "revision": "0123456789abcdef"}, "agent": "benching.agents.instrumented_omp_agent:InstrumentedOmpAgent", "max_tokens": 1, "context_window": 2, "run_id_prefix": "bench"}}
     root = {"benchmark": config["benchmark"], "providers": {"acme": {"enabled": True, "env_file": str(tmp_path / "acme.env"), "auth_env": "ACME_API_KEY", "base_url": "https://api.acme.test/v1", "api_model": "acme-model-1"}}}
     (tmp_path / "acme.env").write_text("ACME_API_KEY=secret\n", encoding="utf-8")
 
@@ -202,10 +209,17 @@ def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) ->
     monkeypatch.setattr(runner, "provider_env_values", lambda name, config: {"ACME_API_KEY": "secret"})
     monkeypatch.setattr(runner, "provider_config", lambda name, root_config=None: (root, root["providers"]["acme"]))
 
-    monkeypatch.setattr(runner.subprocess, "run", lambda *args, **kwargs: None)
+    def _fake_analyze(*args, **kwargs):
+        """Emulate successful canonical analysis publication."""
+        command = args[0]
+        run_dir = Path(command[-1])
+        (run_dir / "metrics.jsonl").write_text('{"value": 1}\n', encoding="utf-8")
+        (run_dir / "summary.json").write_text('{"schema_version": 1}\n', encoding="utf-8")
+
+    monkeypatch.setattr(runner.subprocess, "run", _fake_analyze)
     monkeypatch.setattr(runner, "version", lambda name: None)
 
-    from benchmark.status import ProgressEvent
+    from benching.benchmark.status import ProgressEvent
 
     def collect(event: ProgressEvent) -> None:
         calls.append((event.phase, event.message))
@@ -232,5 +246,6 @@ class _FakeRunDir:
     @property
     def name(self) -> str:
         return "fake-run"
+
 
 

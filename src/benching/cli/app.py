@@ -1,0 +1,75 @@
+"""benching — benchmark LLM API providers against terminal-agent task suites.
+
+Command groups (each a module under cli/):
+
+  doctor      environment health checks
+  config      inspect the active configuration
+  provider    list / add / remove / use / validate / probe providers
+  benchmark   list / add / remove / use benchmark suites
+  run         execute a benchmark run for one provider
+  compare     run and compare two or more providers
+  runs        inspect past runs
+  results     read run results
+  tokenizer   manage the pinned tokenizer cache
+
+No arguments launches the interactive slash-command shell (cli/shell.py).
+
+CLI modules stay thin: they parse arguments, call the benchmark layer under
+``benchmark/``, and render output. Benchmark logic lives in the layer so a
+dashboard can import the exact same functions.
+"""
+from __future__ import annotations
+
+import typer
+
+app = typer.Typer(
+    name="benching",
+    help="Benchmark LLM providers against terminal-agent task suites.",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
+
+
+def _register() -> None:
+    from benching.cli import benchmarks as benchmarks_group
+    from benching.cli import config as config_group
+    from benching.cli import doctor as doctor_group
+    from benching.cli import providers as providers_group
+    from benching.cli import results as results_group
+    from benching.cli import runs as runs_group
+    from benching.cli import tokenizer as tokenizer_group
+
+    app.add_typer(doctor_group.app, name="doctor")
+    app.add_typer(config_group.app, name="config")
+    app.add_typer(providers_group.app, name="provider")
+    app.add_typer(benchmarks_group.app, name="benchmark")
+    app.add_typer(runs_group.app, name="runs")
+    app.add_typer(results_group.app, name="results")
+    app.add_typer(tokenizer_group.app, name="tokenizer")
+
+    from benching.cli import compare as compare_group
+    from benching.cli import run as run_group
+
+    app.command()(run_group.run)
+    app.command()(compare_group.compare)
+
+
+_register()
+
+
+def main() -> None:
+    """Console entry point: bare `benching` opens the interactive shell."""
+    import sys
+
+    if len(sys.argv) == 1:
+        from benching.cli.shell import run_shell
+
+        run_shell()
+        return
+    app()
+
+
+if __name__ == "__main__":
+    main()
+
+

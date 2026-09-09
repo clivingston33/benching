@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from analytics.analyze import normalize_runs
+from benching.analytics.analyze import normalize_runs
 
 FIXTURE = Path(__file__).parent / "fixtures" / "summary.json"
 SUMMARY_KEYS = {
@@ -112,6 +112,14 @@ def write_harbor_result(directory: Path, task_id: str, trial_id: str, *, reward:
 
 def task_run(tmp_path: Path, outcomes: list[tuple[str, str, float | None, str | None, int]]) -> dict:
     directory = write_run(tmp_path, 1, "model-a", ("org/tokenizer", "rev"))
+    # Planned tasks must match observed outcomes: real runs only ever
+    # observe their planned tasks, and planned-but-unobserved tasks now
+    # correctly surface as explicit missing entries.
+    planned = sorted({task_id for task_id, _, _, _, _ in outcomes})
+    run_path = directory / "run.json"
+    run_doc = json.loads(run_path.read_text(encoding="utf-8"))
+    run_doc["tasks"] = planned
+    run_path.write_text(json.dumps(run_doc), encoding="utf-8")
     rows = []
     for task_id, trial_id, reward, exception, request_count in outcomes:
         for request_index in range(request_count):
@@ -268,3 +276,4 @@ def test_context_buckets_are_canonical_and_normalized(tmp_path: Path) -> None:
     assert bucket["ttft_ms"]["mean"] == 100.0
     assert bucket["decode_tps"]["p50"] is None
     assert bucket["failure_rate"] == 0.0
+
