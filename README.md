@@ -109,6 +109,8 @@ npm run build
 BENCHING_DATA_DIR=/path/to/curated-artifacts npm run dev
 ```
 
+(Windows PowerShell: set `$env:BENCHING_DATA_DIR = "C:\curated\benching-artifacts"`, then `npm run dev`.)
+
 Without `BENCHING_DATA_DIR` it serves the checked-in demo fixtures. See
 `dashboard/README.md`.
 
