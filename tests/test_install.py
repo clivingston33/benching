@@ -102,6 +102,8 @@ def test_resolve_executable_without_global_mutation(tmp_path: Path, monkeypatch)
         fake = fake.with_suffix(".exe")
     fake.parent.mkdir(parents=True)
     fake.write_bytes(b"")
+    if os.name != "nt":
+        fake.chmod(0o755)  # shutil.which requires executability on POSIX
     monkeypatch.setenv("PATH", str(fake.parent))
     assert resolve_executable(fake.stem) == fake
     assert resolve_executable("definitely-not-a-real-binary-xyz") is None
