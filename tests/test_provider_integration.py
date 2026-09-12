@@ -216,7 +216,9 @@ def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) ->
         (run_dir / "metrics.jsonl").write_text('{"value": 1}\n', encoding="utf-8")
         (run_dir / "summary.json").write_text('{"schema_version": 1}\n', encoding="utf-8")
 
-    monkeypatch.setattr(runner.subprocess, "run", _fake_analyze)
+    from conftest import selective_analysis_fake
+
+    selective_analysis_fake(monkeypatch, runner, _fake_analyze)
     monkeypatch.setattr(runner, "version", lambda name: None)
     monkeypatch.setattr(
         runner, "resolve_tokenizer_context",

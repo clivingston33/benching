@@ -140,7 +140,10 @@ def _free_port() -> int:
 
 
 def _sleep_child(seconds: int = 30) -> subprocess.Popen[bytes]:
-    return subprocess.Popen([sys.executable, "-c", f"import time; time.sleep({seconds})"])
+    """Test stand-in for a run-owned child: own session like spawn_owned."""
+    if sys.platform == "win32":
+        return subprocess.Popen([sys.executable, "-c", f"import time; time.sleep({seconds})"])
+    return subprocess.Popen([sys.executable, "-c", f"import time; time.sleep({seconds})"], start_new_session=True)
 
 
 # A. Proxy ownership: a foreign listener must not count as readiness. ------
@@ -350,7 +353,12 @@ def test_direct_cancellation_terminates_owned_children(tmp_path, monkeypatch) ->
             "metadata": {"source": "unavailable"},
         },
     )
-    monkeypatch.setattr(runner.subprocess, "run", lambda *a, **k: None)
+    def _never_analyze(*args, **kwargs):
+        raise AssertionError("analysis child must not start on the cancellation path")
+
+    from conftest import selective_analysis_fake
+
+    selective_analysis_fake(monkeypatch, runner, _never_analyze)
 
     seen: dict = {}
     orig_harbor = RunHandle.register_harbor
@@ -441,7 +449,9 @@ def _run_one_harness(tmp_path, monkeypatch, harbor_argv, port):
         (run_dir / "metrics.jsonl").write_text('{"value": 1}\n', encoding="utf-8")
         (run_dir / "summary.json").write_text('{"schema_version": 1}\n', encoding="utf-8")
 
-    monkeypatch.setattr(runner.subprocess, "run", _fake_analyze)
+    from conftest import selective_analysis_fake
+
+    selective_analysis_fake(monkeypatch, runner, _fake_analyze)
     seen: dict = {}
     orig_harbor = RunHandle.register_harbor
     orig_proxy = RunHandle.register_proxy

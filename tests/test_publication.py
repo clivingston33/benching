@@ -82,7 +82,9 @@ def _harness(tmp_path: Path, monkeypatch, analyze_behavior: str, cancel: threadi
         (run_dir / "summary.json").write_text('{"schema_version": 1}\n', encoding="utf-8")
         return None
 
-    monkeypatch.setattr(runner.subprocess, "run", _analyze)
+    from conftest import selective_analysis_fake
+
+    selective_analysis_fake(monkeypatch, runner, _analyze)
     recorded: list = []
     real_set_status = runner.set_status
 

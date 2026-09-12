@@ -19,11 +19,11 @@ PRIVATE (never mounted/published to the dashboard)
   <provider>.env          API credentials (0600)
 ```
 
-Authoritative JSON Schemas live in `benchmark/schemas/` (`summary-v1.schema.json`,
-`comparison-v1.schema.json`, draft 2020-12). Consumers validate before use
-and project only schema-defined public fields; unknown extras are accepted
-by validation (additive evolution) but stripped before browser
-serialization, never rendered blindly.
+Authoritative JSON Schemas live in `src/benching/benchmark/schemas/`
+(`summary-v1.schema.json`, `comparison-v1.schema.json`, draft 2020-12).
+Consumers validate before use and project only schema-defined public
+fields; unknown extras are accepted by validation (additive evolution)
+but stripped before browser serialization, never rendered blindly.
 
 ## Versioning
 

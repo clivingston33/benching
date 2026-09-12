@@ -78,7 +78,10 @@ jobs:
           cd "$RUNNER_TEMP"
           BIN="$RUNNER_TEMP/smoke-venv/bin/benching"
           "$BIN" --help
-          "$BIN" doctor
+          # doctor exits 1 when external tools are missing (the expected
+          # runner state); the gate is that it renders its diagnostic table.
+          "$BIN" doctor > doctor.txt 2>&1 || test $? -eq 1
+          grep -q "benching environment" doctor.txt
           "$BIN" runs
           "$BIN" results --help
           "$BIN" tokenizer --help

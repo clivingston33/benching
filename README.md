@@ -1,8 +1,123 @@
 # benching
 
-Benchmark LLM API providers against terminal-agent task suites: run a task suite against one or more OpenAI-compatible providers behind a telemetry proxy, and compare latency, throughput, reliability, and task pass rates.
+Benchmark LLM API providers against terminal-agent task suites: run a suite against one or more OpenAI-compatible providers behind a telemetry proxy, and compare latency, throughput, reliability, and task pass rates. Each run produces a portable `summary.json`; multi-run `comparison-*.json` files embed them; an optional read-only dashboard renders both.
 
-The installed package ships an immutable default benchmark manifest; user state, registered providers, credentials, and local benchmark manifests live under `~/.config/benching/` (overridable via `BENCHING_CONFIG_DIR`), and benchmark runs live under `./runs` (overridable via `BENCHING_RUNS_DIR`). Runtime data never lives inside the installed package.
+## What it does
+
+- Runs a Harbor task suite against a configured provider (quick smoke subset or full suite) with per-run telemetry proxying.
+- Normalizes each run into canonical metrics without ever rewriting other runs.
+- Compares runs and visualizes results in an optional Next.js dashboard.
+
+## Requirements
+
+Analysis, configuration, and result viewing (everything except execution itself):
+
+- Python 3.12+
+
+Benchmark execution (`benching run`, `benching compare`):
+
+- Linux or WSL, a working Docker daemon, `harbor` and `omp` on `PATH`,
+  and credentials for an OpenAI-compatible streaming API. Native Windows
+  execution is not supported; those commands fail fast with guidance there.
+
+Optional:
+
+- Node 18.18+ for the dashboard (`dashboard/`). Python users never need Node.
+
+## Install
+
+Not on PyPI yet. Install from a clone (non-editable):
+
+```bash
+git clone https://github.com/clivingston33/benching.git
+cd benching
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Linux/macOS: source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install .
+```
+
+Contributors: use `pip install -e .` plus `pip install pytest build`; see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Quickstart
+
+```bash
+benching doctor
+```
+
+`doctor` checks Python, execution OS, Docker, the Docker daemon, Harbor,
+OMP, configuration, tasks, and the tokenizer cache. Before setup, expect
+`MISSING` rows for Docker/Harbor/OMP and possibly the tokenizer: those
+block benchmark *execution* only, not configuration or result viewing.
+A nonzero exit with a printed table is a diagnostic, not an install failure.
+
+Register a provider (key is prompted securely and stored in a private env
+file; `YOUR_API_KEY` below is a placeholder, never commit a real key):
+
+```bash
+benching provider add --name myprovider --base-url https://api.example.com/v1 --model model-id
+benching provider list
+```
+
+Endpoints must be HTTPS (a narrow localhost exception exists for local
+development). Adding validates the connection by default; pass
+`--no-validate` to register first and validate later with
+`benching provider validate myprovider`.
+
+Register a benchmark suite (a local Harbor task directory, one
+subdirectory per task):
+
+```bash
+benching benchmark add --name my-suite --suite "My Suite" --version "1.0" --tasks-dir ./tasks --smoke-tasks task-a,task-b
+benching benchmark list
+```
+
+Adding a provider or benchmark makes it active. Then run the smoke subset:
+
+```bash
+benching run --smoke --concurrency 1 --trials 1
+```
+
+Warning: runs send real requests to your provider and may incur API cost.
+Smoke mode plus `--concurrency 1 --trials 1` is the cheapest supported
+first run. The run lands under `runs/<run-id>/`.
+
+## View results
+
+```bash
+benching runs
+benching results show latest
+benching results reanalyze <run-id>   # only when regeneration is intended
+```
+
+Runs live under `./runs` (overridable via `BENCHING_RUNS_DIR`). Viewing is
+read-only: `results show` never recomputes anything; only explicit
+`reanalyze` regenerates one run's metrics/summary from its evidence.
+
+## Dashboard (optional)
+
+The dashboard renders canonical artifacts only. Point it at a **curated**
+directory of `summary.json` / `comparison-*.json` files — never at a raw
+`runs/` tree:
+
+```bash
+cd dashboard
+npm ci
+npm test
+npm run build
+BENCHING_DATA_DIR=/path/to/curated-artifacts npm run dev
+```
+
+Without `BENCHING_DATA_DIR` it serves the checked-in demo fixtures. See
+`dashboard/README.md`.
+
+## Artifact privacy
+
+`summary.json` and `comparison-*.json` are publication-oriented.
+`raw.jsonl`, `metrics.jsonl`, `run.json`, `command.json`, `proxy-auth.json`,
+credential files, and logs are private by default. Full policy:
+[docs/publication.md](docs/publication.md).
 
 ## Project components
 
@@ -23,7 +138,6 @@ read-only via `BENCHING_DATA_DIR`. The dashboard never runs inference.
 Releases are independent dimensions: `benching` version (pyproject),
 dashboard version (`dashboard/package.json`), artifact contract version
 (`schema_version`; tags like `benching-v0.x.y`, `dashboard-v0.x.y`).
-
 ## Layout
 
 ```text
@@ -183,7 +297,7 @@ benching tokenizer prepare        download the pinned tokenizer
 ## Configure a benchmark suite
 
 The packaged default manifest declares everything suite-specific (see
-`benchmark/resources/benchmark.yaml` for the exact shipped content):
+`src/benching/benchmark/resources/benchmark.yaml` for the exact shipped content):
 
 ```yaml
 benchmark:
@@ -246,7 +360,7 @@ Registered local suites overlay it when selected with `benching benchmark use`.
 ## Runtime paths
 
 ```text
-package resources   benchmark/resources/, benchmark/schemas/ (read-only, in the wheel)
+package resources   src/benching/benchmark/resources/, src/benching/benchmark/schemas/ (read-only, in the wheel)
 user config         ~/.config/benching/ or BENCHING_CONFIG_DIR (writable)
 runs                ./runs or BENCHING_RUNS_DIR (writable, never site-packages)
 caches              ~/.cache/benching/ (disposable)
@@ -259,18 +373,6 @@ process environment; `~/.local/bin` is consulted explicitly when resolving
 registry mutation from multiple processes is unsupported (last-writer-wins
 on complete documents, no locking).
 
-## Quickstart
-
-```bash
-python3 -m pip install -e .
-benching doctor
-benching tokenizer prepare
-benching provider add
-benching provider use myprovider
-benching run --smoke
-```
-
-Smoke validates credentials, runs the smoke tasks, and produces a run under `runs/`.
 
 ## Run artifacts
 
@@ -304,7 +406,7 @@ fields do not belong in this artifact.
 Schema version 1 is retained: the canonical summary/comparison artifacts were
 introduced in the current release line, so task-level aggregation and context
 buckets complete that contract without a second externally released schema.
-Authoritative JSON Schemas live in `schemas/`; see `docs/artifacts.md` for
+Authoritative JSON Schemas live in `src/benching/benchmark/schemas/`; see `docs/artifacts.md` for
 the public/private boundary, versioning, units, null semantics, and support
 promise. Sanitized producer examples live in `examples/artifacts/`.
 
@@ -343,10 +445,30 @@ Task suite -> Harbor -> OMP -> telemetry proxy -> provider HTTPS API
                                         |
                                         +-> run-scoped raw.jsonl
 
-analytics/analyze.py -> metrics.jsonl and comparison JSON
+src/benching/analytics/analyze.py -> metrics.jsonl and comparison JSON
 ```
 
 A live progress dashboard is a later milestone: `benchmark.runner.run_one` already reports deterministic `(phase, message)` progress events through an optional callback, and the CLI renders them as status lines; a dashboard can subscribe to the same hook.
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, architecture invariants,
+and the CI commands behind every PR. Security reports: [SECURITY.md](SECURITY.md).
+
+## Known limitations
+
+- Benchmark execution requires Linux/WSL with Docker, Harbor, and OMP;
+  there is no local dry-run backend, and every real run spends provider API calls.
+- Provider compatibility assumes an OpenAI-compatible streaming API;
+  non-conforming providers fail validation rather than benchmarking incorrectly.
+- The dashboard is read-only and shows curated canonical artifacts; it has
+  no live-run view and performs no measurement itself.
+- Pre-1.0: the artifact contract is at major version 1 with additive-only
+  evolution promised, but CLI surfaces may still change between alphas.
+- Concurrent registry mutation from multiple processes is last-writer-wins
+  (never torn files, no locking) and is not a supported workflow.
+- History/catalog views scan the artifact set per load; thousands of runs
+  will need the catalog work slated for after the alpha.
 
 ## Issue labels
 
