@@ -63,6 +63,13 @@ test("projection strips unknown fields and stays schema-valid", () => {
   assert.ok(!JSON.stringify(projectedComparison).includes("DO_NOT_EXPOSE"));
   assert.deepEqual(comparisonSchemaErrors(projectedComparison), []);
   assert.deepEqual(comparisonIdentityErrors(projectedComparison), []);
+  const rawSecrets = readJson(path.join(corpus, "summary-fireworks-a.json")) as Record<string, unknown>;
+  rawSecrets.api_key = "sk-DO_NOT_EXPOSE";
+  rawSecrets.proxy_auth_token = "tok-DO_NOT_EXPOSE";
+  rawSecrets.authorization = "Bearer DO_NOT_EXPOSE";
+  const projectedSecrets = projectSummary(rawSecrets as unknown as CanonicalRunSummary);
+  assert.ok(!JSON.stringify(projectedSecrets).includes("DO_NOT_EXPOSE"));
+  assert.deepEqual(summarySchemaErrors(projectedSecrets), []);
 });
 
 test("projection preserves provenance and new optional fields", () => {

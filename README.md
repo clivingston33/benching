@@ -353,6 +353,17 @@ A live progress dashboard is a later milestone: `benchmark.runner.run_one` alrea
 GitHub issues use `core` (Python engine), `dashboard` (Next.js viewer),
 `contract` (schemas/artifacts shared by both), and `docs`.
 
+## License
+
+Benching is MIT-licensed; see [LICENSE](LICENSE). The root license covers
+first-party source, documentation, tests, and first-party examples.
+
+Some files have separate treatment: provider logos in `dashboard/public/`
+are third-party trademarks, and Docker/Harbor/OMP are external tools with
+their own licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+What may be published vs. what stays private is documented in
+[docs/publication.md](docs/publication.md).
+
 ## History
 
 This repository previously hardcoded a Terminal-Bench 2.1 comparison of the Kourier and ElectronHub providers and was renamed from `provider-benchmark` to `benching`. It now ships as a generic harness; the earlier `benchmarkctl` command line was replaced by the `benching` hierarchy.
