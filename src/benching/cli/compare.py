@@ -4,7 +4,7 @@ from __future__ import annotations
 import typer
 from rich.console import Console
 
-from benching.benchmark.config import benchmark_spec, enabled_providers
+from benching.benchmark.config import enabled_providers
 from benching.benchmark.runner import analyze_runs, compare as compare_runs
 
 app = typer.Typer(help="Run and compare providers.", no_args_is_help=True)
@@ -26,23 +26,19 @@ def compare(
         raise typer.BadParameter("compare needs at least two providers")
     if execution not in ("sequential", "parallel"):
         raise typer.BadParameter("--execution must be sequential or parallel")
-    from benching.benchmark.benchmarks import active_root_config
-    from benching.benchmark.state import load_state
+    from benching.benchmark.settings import effective_settings
 
-    root = active_root_config()
-    spec = benchmark_spec(root)
+    settings = effective_settings(model=model, reasoning=reasoning, concurrency=concurrency, trials=trials)
+    root = settings.root
+    spec = settings.spec
     configured = set(enabled_providers(root))
     unknown = [name for name in providers if name not in configured]
     if unknown:
         raise typer.BadParameter(f"provider(s) not enabled: {', '.join(unknown)} (enabled: {', '.join(sorted(configured)) or 'none'})")
     mode = "smoke" if smoke else "full"
-    state = load_state()
-    effective_reasoning = reasoning or state.reasoning
-    effective_concurrency = concurrency or state.concurrency
-    effective_trials = trials or state.trials
     console.print(f"[bold]{spec.display_name}[/bold] — comparing {', '.join(providers)} ({execution})")
     try:
-        directories = compare_runs(providers, mode, model or state.model, effective_concurrency, effective_trials, root, execution=execution, reasoning=effective_reasoning)
+        directories = compare_runs(providers, mode, settings.model, settings.concurrency, settings.trials, root, execution=execution, reasoning=settings.reasoning)
         analyze_runs(directories, execution=execution)
     except SystemExit as exc:
         console.print("[red]Comparison failed[/red]")

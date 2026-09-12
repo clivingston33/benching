@@ -1,19 +1,39 @@
-"""benching results — read benchmark results for a run."""
-from __future__ import annotations
+"""benching results — read benchmark results for a run.
 
-import json
-import sys
-from pathlib import Path
+Thin presentation over :mod:`benching.benchmark.results`: viewing is
+read-only (the canonical ``summary.json`` is shown as-is, never
+recomputed); only ``reanalyze`` regenerates artifacts, explicitly.
+"""
+from __future__ import annotations
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from benching.benchmark.results import reanalyze_run
-from benching.cli.runs import _resolve_run, _run_json, _status
+from benching.benchmark.results import load_result, reanalyze_run, summary_for
+from benching.benchmark.runs import describe_run, duration_seconds, format_duration, run_json, status, task_counts
 
 app = typer.Typer(help="Read run results.", no_args_is_help=True)
 console = Console()
+
+
+def _display_status(directory) -> str:
+    """Status text with a stale-run diagnostic marker when applicable."""
+    try:
+        described = describe_run(directory)
+    except Exception:
+        return status(directory)
+    if described.get("stale"):
+        return f"{described['status']} (stale)"
+    return str(described.get("status", "unknown"))
+
+
+def _load(run_id: str, provider: str | None):
+    """Core result loading, translated into a CLI usage error."""
+    try:
+        return load_result(run_id, provider=provider)
+    except SystemExit as exc:
+        raise typer.BadParameter(str(exc.code or exc)) from None
 
 
 @app.command()
@@ -26,18 +46,8 @@ def show(
     Read-only: shows the canonical summary without renormalizing. Use
     `benching results reanalyze` to explicitly regenerate it.
     """
-    if run_id == "latest" and provider:
-        from benching.cli.runs import _all_run_dirs
-
-        matches = [d for d in _all_run_dirs() if str((_run_json(d) or {}).get("provider", "")) == provider]
-        if not matches:
-            raise typer.BadParameter(f"no runs for provider {provider!r}")
-        directory = matches[0]
-    else:
-        directory = _resolve_run(run_id)
-    if not (directory / "raw.jsonl").is_file() and not (directory / "metrics.jsonl").is_file():
-        raise typer.BadParameter(f"no telemetry found in {directory}")
-    _render_metrics(directory, _summary_for(directory))
+    directory, summary = _load(run_id, provider)
+    _render_metrics(directory, summary)
 
 
 @app.command()
@@ -51,30 +61,31 @@ def latest(
 @app.command()
 def reanalyze(run_id: str) -> None:
     """Explicitly regenerate one run's metrics/summary from its evidence."""
-    from benching.cli.runs import _resolve_run as resolve
+    from benching.benchmark.runs import resolve_run
 
-    directory = resolve(run_id)
+    try:
+        directory = resolve_run(run_id)
+    except SystemExit as exc:
+        raise typer.BadParameter(str(exc.code or exc)) from None
     summary = reanalyze_run(directory)
     if summary is None:
         raise typer.BadParameter(f"no normalizable telemetry in {directory}")
     console.print(f"[green]Reanalyzed:[/green] [cyan]{directory.name}[/cyan]")
 
 
-def _render_metrics(directory: Path, summary: dict | None) -> None:
-    from benching.cli.runs import _duration_seconds, _fmt_duration, _task_counts
-
-    run = _run_json(directory) or {}
+def _render_metrics(directory, summary: dict | None) -> None:
+    run = run_json(directory) or {}
     benchmark = f"{run.get('benchmark', '?')} {run.get('benchmark_version', '')}".strip()
     title = f"{benchmark} — {run.get('provider', '?')}"
     console.rule(title)
-    console.print(f"Run: [bold]{directory.name}[/bold]  Status: {_status(directory)}")
+    console.print(f"Run: [bold]{directory.name}[/bold]  Status: {_display_status(directory)}")
     model = run.get("benchmark_model")
     api_model = run.get("api_model")
     console.print(f"Model: {model} (api {api_model})" if model and api_model else f"Model: {model or api_model or '?'}")
-    counts = _task_counts(directory)
+    counts = task_counts(directory)
     if counts["passed"] or counts["failed"] or counts["timed_out"]:
         console.print(
-            f"Tasks: [green]{counts['passed']} passed[/green] / [red]{counts['failed']} failed[/red] / [yellow]{counts['timed_out']} timed out[/yellow]  ({_fmt_duration(_duration_seconds(directory))})"
+            f"Tasks: [green]{counts['passed']} passed[/green] / [red]{counts['failed']} failed[/red] / [yellow]{counts['timed_out']} timed out[/yellow]  ({format_duration(duration_seconds(directory))})"
         )
 
     if summary is None:
@@ -84,29 +95,6 @@ def _render_metrics(directory: Path, summary: dict | None) -> None:
     _render_reliability(summary)
     _render_tasks(summary)
     _render_tokens(summary)
-
-
-def _summary_for(directory: Path) -> dict | None:
-    """Reconstruct the run's summary from metrics.jsonl via analyze.summerize."""
-    from benching.analytics import analyze as A
-
-    run = _run_json(directory) or {}
-    rows = []
-    metrics_path = directory / "metrics.jsonl"
-    if metrics_path.is_file():
-        for line in metrics_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            try:
-                value = json.loads(line)
-                if isinstance(value, dict):
-                    rows.append(value)
-            except json.JSONDecodeError:
-                continue
-    if not rows:
-        return None
-    try:
-        return A.summarize(run, rows, directory)
-    except Exception:
-        return None
 
 
 def _render_timing(summary: dict) -> None:
@@ -142,15 +130,16 @@ def _render_reliability(summary: dict) -> None:
     table.add_column("Metric")
     table.add_column("Value")
     rows = [("requests", "Requests")] if requests is not None else []
-    for key, label in (
-        ("request_success_rate", "Request success rate"),
-        ("stream_completion_rate", "Stream completion rate"),
-        ("http_error_rate", "HTTP error rate"),
-        ("timeout_rate", "Timeout rate"),
-        ("provider_failures", "Provider failures"),
-        ("downstream_cancellations", "Downstream cancellations"),
-    ):
-        rows.append((key, label))
+    rows.extend(
+        (
+            ("request_success_rate", "Request success rate"),
+            ("stream_completion_rate", "Stream completion rate"),
+            ("http_error_rate", "HTTP error rate"),
+            ("timeout_rate", "Timeout rate"),
+            ("provider_failures", "Provider failures"),
+            ("downstream_cancellations", "Downstream cancellations"),
+        )
+    )
     for key, label in rows:
         value = requests if key == "requests" else reliability.get(key)
         table.add_row(label, _fmt(value))
@@ -159,7 +148,7 @@ def _render_reliability(summary: dict) -> None:
 
 def _render_tasks(summary: dict) -> None:
     benchmark_stats = summary.get("benchmark") or {}
-    if not benchmark_stats or not benchmark_stats.get("total_tasks"):
+    if not benchmark_stats.get("total_tasks"):
         return
     tasks = Table(title="Task results", show_header=True, header_style="bold")
     tasks.add_column("Total")
@@ -182,7 +171,9 @@ def _render_tokens(summary: dict) -> None:
     if not any(tokens.get(key) for key in ("input_provider", "output_provider", "output_local")):
         return
     console.print(
-        f"Tokens: input {tokens.get('input_provider') or 0} / output provider {tokens.get('output_provider') or 0} / output local {tokens.get('output_local') or 0}"
+        f"Tokens: input {tokens.get('input_provider') or 0}"
+        f" / output provider {tokens.get('output_provider') or 0}"
+        f" / output local {tokens.get('output_local') or 0}"
     )
 
 
@@ -192,5 +183,3 @@ def _fmt(value: object) -> str:
     if isinstance(value, float):
         return f"{value:g}"
     return str(value)
-
-

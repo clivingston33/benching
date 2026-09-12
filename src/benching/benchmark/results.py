@@ -39,11 +39,6 @@ def load_result(run_ref: str = "latest", provider: str | None = None) -> tuple[P
     return directory, summary_for(directory)
 
 
-def ensure_normalized(run_ref: str = "latest", provider: str | None = None) -> tuple[Path, dict[str, Any] | None]:
-    """Backward-compatible alias for load_result (read-only)."""
-    return load_result(run_ref, provider=provider)
-
-
 def reanalyze_run(directory: Path) -> dict[str, Any] | None:
     """Explicitly regenerate one run's metrics/summary from its evidence.
 

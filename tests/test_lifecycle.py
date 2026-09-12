@@ -339,6 +339,17 @@ def test_direct_cancellation_terminates_owned_children(tmp_path, monkeypatch) ->
     monkeypatch.setattr(runner, "provider_env_values", lambda name, config: {"A_API_KEY": "dummy"})
     monkeypatch.setattr(runner, "resolve", lambda *a, **k: ("https://api.example.test/v1", "m"))
     monkeypatch.setattr(runner, "version", lambda name: None)
+    monkeypatch.setattr(
+        runner, "resolve_tokenizer_context",
+        lambda root, spec, provider, model=None: {
+            "provider": provider,
+            "endpoint": "https://api.example.test/v1",
+            "api_model": "m",
+            "values": {"A_API_KEY": "dummy"},
+            "model_settings": {},
+            "metadata": {"source": "unavailable"},
+        },
+    )
     monkeypatch.setattr(runner.subprocess, "run", lambda *a, **k: None)
 
     seen: dict = {}
@@ -412,6 +423,17 @@ def _run_one_harness(tmp_path, monkeypatch, harbor_argv, port):
     monkeypatch.setattr(runner, "provider_env_values", lambda name, config: {"A_API_KEY": "dummy"})
     monkeypatch.setattr(runner, "resolve", lambda *a, **k: ("https://api.example.test/v1", "m"))
     monkeypatch.setattr(runner, "version", lambda name: None)
+    monkeypatch.setattr(
+        runner, "resolve_tokenizer_context",
+        lambda root, spec, provider, model=None: {
+            "provider": provider,
+            "endpoint": "https://api.example.test/v1",
+            "api_model": "m",
+            "values": {"A_API_KEY": "dummy"},
+            "model_settings": {},
+            "metadata": {"source": "unavailable"},
+        },
+    )
 
     def _fake_analyze(*args, **kwargs):
         """Emulate successful canonical analysis publication."""
@@ -475,7 +497,7 @@ def test_proxy_death_fails_run_and_stops_harbor(tmp_path, monkeypatch) -> None:
 # G. Live foreground interruption reaches orchestration. ---------------------------
 
 def test_live_interrupt_terminates_owned_and_exits_130(monkeypatch) -> None:
-    import benching.benchmark.live as live_mod
+    import benching.cli.live as live_mod
 
     monkeypatch.setenv("BENCHING_ALLOW_UNSUPPORTED_PLATFORM", "1")
     owned = _sleep_child(30)
@@ -578,6 +600,17 @@ def test_proxy_startup_failure_blocks_harbor(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(runner, "provider_env_values", lambda name, config: {"A_API_KEY": "dummy"})
     monkeypatch.setattr(runner, "resolve", lambda *a, **k: ("https://api.example.test/v1", "m"))
     monkeypatch.setattr(runner, "version", lambda name: None)
+    monkeypatch.setattr(
+        runner, "resolve_tokenizer_context",
+        lambda root, spec, provider, model=None: {
+            "provider": provider,
+            "endpoint": "https://api.example.test/v1",
+            "api_model": "m",
+            "values": {"A_API_KEY": "dummy"},
+            "model_settings": {},
+            "metadata": {"source": "unavailable"},
+        },
+    )
 
     harbor_spawns: list = []
     real_spawn = lifecycle_mod.spawn_owned

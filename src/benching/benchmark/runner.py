@@ -41,7 +41,7 @@ from benching.benchmark.lifecycle import (
 )
 from benching.benchmark.security import write_credential_file
 from benching.benchmark.status import ProgressEvent, ProgressFn, scan_harbor_results
-from benching.benchmark.tokenizer import tokenizer_metadata
+from benching.benchmark.tokenizer import resolve_tokenizer_context, tokenizer_metadata
 from benching.benchmark.validation import validate_provider
 
 __all__ = [
@@ -544,10 +544,11 @@ def run_one(
     emit(_event("docker", "docker available"))
     root_config, config = provider_config(options.provider, root_config)
     spec = options.benchmark or benchmark_spec(root_config)
-    values = provider_env_values(options.provider, config)
-    endpoint, api_model = resolve(options.provider, config, values, options.benchmark_model)
-    model_settings = resolve_model_settings(config, spec, api_model, bool(options.benchmark_model))
-    tokenizer = tokenizer_metadata(spec, values, model_settings)
+    context = resolve_tokenizer_context(root_config, spec, options.provider, options.benchmark_model)
+    values = context["values"]
+    endpoint, api_model = context["endpoint"], context["api_model"]
+    model_settings = context["model_settings"]
+    tokenizer = context["metadata"]
     emit(_event("tokenizer", "tokenizer cached" if tokenizer["source"] == "huggingface" else "tokenizer unavailable; provider token counts retained"))
     emit(_event("validate", f"validating {options.provider}"))
     result = validate_provider(options.provider, spec, root_config, config, values, api_model)

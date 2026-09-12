@@ -304,12 +304,13 @@ def cmd_benchmarks(session: Session, args: list[str]) -> None:
 
 
 def _build_run_options(session: Session, mode: str):
-    from benching.benchmark.runner import RunOptions
+    """Shell (options, settings) via the same owner as Typer run."""
+    from benching.benchmark.settings import run_options
 
-    return RunOptions(
-        provider=session.provider or "",
-        mode=mode,
-        benchmark_model=session.model,
+    return run_options(
+        mode,
+        provider=session.provider,
+        model=session.model,
         reasoning=session.reasoning,
         concurrency=session.concurrency,
         trials=session.trials,
@@ -317,25 +318,25 @@ def _build_run_options(session: Session, mode: str):
 
 
 def _run(session: Session, mode: str) -> None:
-    from benching.benchmark.benchmarks import active_root_config
     from benching.benchmark.runner import run_one
-    from benching.benchmark.live import drive_live_view
+    from benching.cli.live import drive_live_view
 
     if not session.provider:
         _err("no active provider; /provider use NAME")
         return
-    options = _build_run_options(session, mode)
-    root = active_root_config()
-    from benching.benchmark.config import benchmark_spec
-
-    spec = benchmark_spec(root)
+    try:
+        options, settings = _build_run_options(session, mode)
+    except SystemExit as exc:
+        _err(str(exc.code or exc))
+        return
+    spec = settings.spec
     title = f"[bold]{spec.display_name}[/bold] — [cyan]{session.provider}[/cyan] ({mode}, concurrency {session.concurrency})"
     import threading
 
     cancel = threading.Event()
 
     def start(on_event):
-        return run_one(options, root, progress=on_event, cancel=cancel)
+        return run_one(options, settings.root, progress=on_event, cancel=cancel)
 
     result = drive_live_view(start, title=title, cancel=cancel)
     if "error" in result:
@@ -405,35 +406,35 @@ def cmd_trials(session: Session, args: list[str]) -> None:
 
 def cmd_compare(session: Session, args: list[str]) -> None:
     """/compare A B — run and compare two providers."""
-    from benching.benchmark.benchmarks import active_root_config
-    from benching.benchmark.config import benchmark_spec, enabled_providers
+    from benching.benchmark.config import enabled_providers
     from benching.benchmark.runner import analyze_runs, compare as compare_runs
+    from benching.benchmark.settings import effective_settings
 
     if len(args) < 2:
         _err("usage: /compare PROVIDER_A PROVIDER_B [...]")
         return
-    root = active_root_config()
+    settings = effective_settings(
+        model=session.model, reasoning=session.reasoning,
+        concurrency=session.concurrency, trials=session.trials,
+    )
+    root = settings.root
     configured = set(enabled_providers(root))
     unknown = [name for name in args if name not in configured]
     if unknown:
         _err(f"provider(s) not enabled: {', '.join(unknown)}")
         return
-    spec = benchmark_spec(root)
+    spec = settings.spec
     console.print(f"[bold]{spec.display_name}[/bold] — comparing {', '.join(args)} (sequential)")
     try:
-        directories = compare_runs(args, "full", session.model, session.concurrency, session.trials, root, reasoning=session.reasoning)
+        directories = compare_runs(args, "full", settings.model, settings.concurrency, settings.trials, root, reasoning=settings.reasoning)
         analyze_runs(directories)
     except SystemExit as exc:
         _err(f"comparison failed: {exc.code or exc}")
-        return
-    console.print("[green]Comparison complete[/green]")
-
-
 def cmd_runs(session: Session, args: list[str]) -> None:
     """/runs — list past runs."""
     from rich.table import Table
 
-    from benching.benchmark.runs import all_run_dirs, run_json, status
+    from benching.benchmark.runs import all_run_dirs, describe_run, run_json
 
     directories = all_run_dirs()
     if not directories:
@@ -446,23 +447,30 @@ def cmd_runs(session: Session, args: list[str]) -> None:
     table.add_column("STATUS")
     for directory in directories:
         run = run_json(directory) or {}
-        table.add_row(directory.name, str(run.get("provider", "?")), str(run.get("benchmark_model") or run.get("api_model") or "?"), status(directory))
+        described = describe_run(directory)
+        display = f"{described['status']} (stale)" if described.get("stale") else str(described.get("status", "unknown"))
+        table.add_row(directory.name, str(run.get("provider", "?")), str(run.get("benchmark_model") or run.get("api_model") or "?"), display)
     console.print(table)
 
 
 def cmd_results(session: Session, args: list[str]) -> None:
     """/results [run_id|latest] — show results for a run."""
-    from benching.benchmark.results import ensure_normalized
-    from benching.benchmark.runs import duration_seconds, format_duration, run_json, status, task_counts
+    from benching.benchmark.results import load_result
+    from benching.benchmark.runs import describe_run, duration_seconds, format_duration, run_json, status, task_counts
 
     try:
-        directory, summary = ensure_normalized(args[0] if args else "latest")
+        directory, summary = load_result(args[0] if args else "latest")
     except SystemExit as exc:
         _err(str(exc.code or exc))
         return
     run = run_json(directory) or {}
     counts = task_counts(directory)
-    console.print(f"[bold]{directory.name}[/bold]  {status(directory)}")
+    try:
+        described = describe_run(directory)
+        display = f"{described['status']} (stale)" if described.get("stale") else str(described.get("status", "unknown"))
+    except Exception:
+        display = status(directory)
+    console.print(f"[bold]{directory.name}[/bold]  {display}")
     console.print(f"Model: {run.get('benchmark_model') or run.get('api_model') or '?'}")
     console.print(f"Tasks: {counts['passed']} passed / {counts['failed']} failed / {counts['timed_out']} timed out ({format_duration(duration_seconds(directory))})")
     if summary is not None:
@@ -474,18 +482,10 @@ def cmd_results(session: Session, args: list[str]) -> None:
 
 def cmd_doctor(session: Session, args: list[str]) -> None:
     """/doctor — environment health checks."""
-    from rich.table import Table
-
     from benching.benchmark.doctor import checks
+    from benching.cli.doctor import render_checks
 
-    table = Table(title="benching environment", show_header=True, header_style="bold")
-    table.add_column("Check", style="bold")
-    table.add_column("Status")
-    table.add_column("Detail")
-    results = checks()
-    for item in results:
-        table.add_row(str(item["name"]), "[green]OK[/green]" if item["ok"] else "[red]MISSING[/red]", str(item["detail"]))
-    console.print(table)
+    render_checks(checks())
 
 
 def cmd_config(session: Session, args: list[str]) -> None:
@@ -501,6 +501,36 @@ def cmd_config(session: Session, args: list[str]) -> None:
     for item in list_providers():
         cfg = item["cfg"]
         console.print(f"  {item['name']}: {cfg.get('default_model') or cfg.get('api_model') or '?'}")
+
+
+def cmd_tokenizer(session: Session, args: list[str]) -> None:
+    """/tokenizer [status|prepare] — show or fetch the pinned tokenizer cache."""
+    from benching.benchmark.settings import effective_settings
+    from benching.benchmark.tokenizer import ensure_tokenizer, resolve_tokenizer_context
+
+    action = args[0].lower() if args else "status"
+    if action not in {"status", "prepare"}:
+        _err("usage: /tokenizer [status|prepare]")
+        return
+    try:
+        settings = effective_settings(model=session.model)
+        context = resolve_tokenizer_context(settings.root, settings.spec, settings.provider, settings.model)
+    except SystemExit as exc:
+        _err(str(exc.code or exc))
+        return
+    if action == "prepare":
+        try:
+            context["metadata"] = ensure_tokenizer(settings.spec, context["values"])
+        except SystemExit as exc:
+            _err(str(exc.code or exc))
+            return
+    metadata = context["metadata"]
+    cached = metadata["source"] == "huggingface"
+    console.print(f"Repo: [bold]{metadata['repo']}[/bold] @ {metadata['revision']}")
+    if context["provider"]:
+        console.print(f"Provider: [cyan]{context['provider']}[/cyan] · model: {context['api_model']}")
+    console.print(f"Cache: [cyan]{metadata['local_cache']}[/cyan]")
+    console.print(f"Status: {'cached' if cached else 'not cached'}")
 
 
 def cmd_help(session: Session, args: list[str]) -> None:
@@ -530,6 +560,7 @@ COMMANDS: dict[str, object] = {
     "trials": cmd_trials,
     "runs": cmd_runs,
     "results": cmd_results,
+    "tokenizer": cmd_tokenizer,
     "doctor": cmd_doctor,
     "config": cmd_config,
     "help": cmd_help,

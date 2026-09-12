@@ -218,6 +218,17 @@ def test_run_one_progress_hook_orders_preflight_phases(tmp_path, monkeypatch) ->
 
     monkeypatch.setattr(runner.subprocess, "run", _fake_analyze)
     monkeypatch.setattr(runner, "version", lambda name: None)
+    monkeypatch.setattr(
+        runner, "resolve_tokenizer_context",
+        lambda root, spec, provider, model=None: {
+            "provider": provider,
+            "endpoint": "https://api.acme.test/v1",
+            "api_model": "acme-model-1",
+            "values": {"ACME_API_KEY": "secret"},
+            "model_settings": {},
+            "metadata": {"source": "unavailable"},
+        },
+    )
 
     from benching.benchmark.status import ProgressEvent
 

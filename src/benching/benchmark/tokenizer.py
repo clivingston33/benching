@@ -57,6 +57,49 @@ def ensure_tokenizer(spec: BenchmarkSpec, values: dict[str, str] | None = None) 
         raise SystemExit("tokenizer download completed without tokenizer.json")
     return metadata
 
+def resolve_tokenizer_context(
+    root: dict[str, Any] | None,
+    spec: BenchmarkSpec,
+    provider: str | None = None,
+    model_override: str | None = None,
+) -> dict[str, Any]:
+    """Resolve the same tokenizer identity/config the runner uses.
+
+    Tokenizer status/prepare and actual execution must agree: with a
+    provider this applies provider config → model override → model
+    settings exactly as :func:`benching.benchmark.runner.run_one` does.
+    Without a provider it falls back to the spec-level shared cache view.
+    Never downloads; use :func:`ensure_tokenizer` for that.
+    """
+    from benching.benchmark.config import (
+        all_provider_env_values,
+        provider_config,
+        provider_env_values,
+        resolve,
+        resolve_model_settings,
+    )
+    if provider:
+        _, config = provider_config(provider, root)
+        values = provider_env_values(provider, config)
+        endpoint, api_model = resolve(provider, config, values, model_override)
+        model_settings = resolve_model_settings(config, spec, api_model, bool(model_override))
+        return {
+            "provider": provider,
+            "endpoint": endpoint,
+            "api_model": api_model,
+            "values": values,
+            "model_settings": model_settings,
+            "metadata": tokenizer_metadata(spec, values, model_settings),
+        }
+    values = all_provider_env_values(root or {})
+    return {
+        "provider": None,
+        "endpoint": None,
+        "api_model": None,
+        "values": values,
+        "model_settings": {},
+        "metadata": tokenizer_metadata(spec, values),
+    }
 
 def tokenizer_cache_path(metadata: dict[str, Any]) -> str | None:
     path = metadata.get("local_cache")

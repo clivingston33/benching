@@ -54,6 +54,17 @@ def _harness(tmp_path: Path, monkeypatch, analyze_behavior: str, cancel: threadi
     monkeypatch.setattr(runner, "provider_env_values", lambda name, config: {"A_API_KEY": "dummy"})
     monkeypatch.setattr(runner, "resolve", lambda *a, **k: ("https://api.example.test/v1", "m"))
     monkeypatch.setattr(runner, "version", lambda name: None)
+    monkeypatch.setattr(
+        runner, "resolve_tokenizer_context",
+        lambda root, spec, provider, model=None: {
+            "provider": provider,
+            "endpoint": "https://api.example.test/v1",
+            "api_model": "m",
+            "values": {"A_API_KEY": "dummy"},
+            "model_settings": {},
+            "metadata": {"source": "unavailable"},
+        },
+    )
 
     def _analyze(*args, **kwargs):
         run_dir = Path(args[0][-1])

@@ -14,6 +14,7 @@ progress during a run.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -47,7 +48,7 @@ class ProgressEvent:
     run_dir: str | None = None
 
 
-ProgressFn = Any  # Callable[[ProgressEvent], None] — kept Any to avoid import cycles
+ProgressFn = Callable[[ProgressEvent], None]
 
 
 def now_utc() -> str:

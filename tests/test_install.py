@@ -437,3 +437,12 @@ def test_fresh_install_cli(installed, tmp_path) -> None:
     assert "benchmark" in completed.stdout.lower()
     doctor = subprocess.run([str(console), "doctor", "check"], cwd=str(work), env=merged, capture_output=True, text=True, timeout=180)
     assert "benching environment" in doctor.stdout, doctor.stderr
+    # M3-12: bare doctor/runs perform their default actions; help surfaces stay green.
+    bare_doctor = subprocess.run([str(console), "doctor"], cwd=str(work), env=merged, capture_output=True, text=True, timeout=180)
+    assert "benching environment" in bare_doctor.stdout, bare_doctor.stderr
+    runs = subprocess.run([str(console), "runs"], cwd=str(work), env=merged, capture_output=True, text=True, timeout=180)
+    assert runs.returncode == 0, runs.stderr
+    assert "No runs match." in runs.stdout, runs.stdout
+    for args in (["results", "--help"], ["tokenizer", "--help"]):
+        completed = subprocess.run([str(console), *args], cwd=str(work), env=merged, capture_output=True, text=True, timeout=120)
+        assert completed.returncode == 0, (args, completed.stderr)

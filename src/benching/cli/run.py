@@ -4,8 +4,7 @@ from __future__ import annotations
 import typer
 from rich.console import Console
 
-from benching.benchmark.config import benchmark_spec, enabled_providers
-from benching.benchmark.runner import RunOptions, run_one
+from benching.benchmark.runner import run_one
 from benching.cli.live import drive_live_view
 
 app = typer.Typer(help="Run the benchmark suite against one provider.", no_args_is_help=True)
@@ -22,37 +21,26 @@ def run(
     trials: int | None = typer.Option(None, "--trials", min=1, help="Attempts per task"),
 ) -> None:
     """Run the suite against PROVIDER (smoke or full)."""
-    from benching.benchmark.benchmarks import active_root_config
-    from benching.benchmark.state import load_state
+    from benching.benchmark.settings import run_options
 
-    state = load_state()
-    provider = provider or state.active_provider
-    if not provider:
-        raise typer.BadParameter("no provider given and no active provider; run `benching provider use NAME` or pass PROVIDER")
-    root = active_root_config()
-    spec = benchmark_spec(root)
-    configured = set(enabled_providers(root))
-    if provider not in configured:
-        raise typer.BadParameter(f"provider is not enabled: {provider} (enabled: {', '.join(sorted(configured)) or 'none'})")
-    mode = "smoke" if smoke else "full"
-    effective_reasoning = reasoning or state.reasoning
-    effective_concurrency = concurrency or state.concurrency
-    effective_trials = trials or state.trials
-    options = RunOptions(
-        provider=provider,
-        mode=mode,
-        benchmark_model=model or state.model,
-        reasoning=effective_reasoning,
-        concurrency=effective_concurrency,
-        trials=effective_trials,
-    )
-    title = f"[bold]{spec.display_name}[/bold] — [cyan]{provider}[/cyan] ({mode}, concurrency {effective_concurrency})"
+    try:
+        options, settings = run_options(
+            "smoke" if smoke else "full",
+            provider=provider,
+            model=model,
+            reasoning=reasoning,
+            concurrency=concurrency,
+            trials=trials,
+        )
+    except SystemExit as exc:
+        raise typer.BadParameter(str(exc.code or exc)) from None
+    title = f"[bold]{settings.spec.display_name}[/bold] — [cyan]{options.provider}[/cyan] ({options.mode}, concurrency {options.concurrency})"
     import threading
 
     cancel = threading.Event()
 
     def start(on_event):
-        return run_one(options, root, progress=on_event, cancel=cancel)
+        return run_one(options, settings.root, progress=on_event, cancel=cancel)
 
     result = drive_live_view(start, title=title, cancel=cancel)
     if "error" in result:
@@ -61,4 +49,3 @@ def run(
     directory = result.get("value")
     if directory is not None:
         console.print(f"\n[green]Run complete:[/green] [cyan]{directory}[/cyan]")
-
