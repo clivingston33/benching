@@ -1,0 +1,67 @@
+name: contracts
+
+# First-class gate for the monorepo's key boundary:
+# Python producer -> canonical schemas/artifacts -> dashboard consumer.
+# Fires when either side of the boundary (or the shared fixtures) moves,
+# and exercises both sides together so neither can drift silently.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/benching/analytics/**"
+      - "src/benching/benchmark/schemas/**"
+      - "src/benching/benchmark/contract.py"
+      - "src/benching/benchmark/results.py"
+      - "examples/artifacts/**"
+      - "tests/test_contract.py"
+      - "tests/test_monorepo.py"
+      - "tests/test_summary_schema.py"
+      - "tests/test_task_accounting.py"
+      - "dashboard/lib/**"
+      - "dashboard/tests/**"
+      - ".github/workflows/contracts.yml"
+  pull_request:
+    paths:
+      - "src/benching/analytics/**"
+      - "src/benching/benchmark/schemas/**"
+      - "src/benching/benchmark/contract.py"
+      - "src/benching/benchmark/results.py"
+      - "examples/artifacts/**"
+      - "tests/test_contract.py"
+      - "tests/test_monorepo.py"
+      - "tests/test_summary_schema.py"
+      - "tests/test_task_accounting.py"
+      - "dashboard/lib/**"
+      - "dashboard/tests/**"
+      - ".github/workflows/contracts.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: producer and consumer compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - run: pip install pytest
+      # Producer side: generated summaries validate, dashboard loads producer
+      # examples, the schema source is physically single-source, projection
+      # strips private fields, same-provider identity stays distinct.
+      - run: python -m pytest tests/test_contract.py tests/test_monorepo.py tests/test_summary_schema.py tests/test_task_accounting.py -q
+      # Consumer side: runtime validation, adapters, and projection against
+      # the same shared corpus. Dashboard needs no Python runtime for this,
+      # only the checked-out schemas and examples.
+      - run: npm ci --prefix dashboard
+      - run: npm test --prefix dashboard

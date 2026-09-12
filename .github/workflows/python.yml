@@ -1,0 +1,104 @@
+name: python
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "examples/**"
+      - "pyproject.toml"
+      - "MANIFEST.in"
+      - "Dockerfile.omp-cache"
+      - ".github/workflows/python.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "examples/**"
+      - "pyproject.toml"
+      - "MANIFEST.in"
+      - "Dockerfile.omp-cache"
+      - ".github/workflows/python.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: tests (py${{ matrix.python-version }}, ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Supported range is exactly what pyproject.toml claims (>=3.12);
+          # 3.11 is not tested because it is not claimed.
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.12"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - run: pip install pytest build
+      - run: python -m pytest -q
+        env:
+          # Full suite is green on Windows too: lifecycle tests gate the
+          # Linux-only execution paths themselves and never weaken Linux.
+          PYTHONUTF8: "1"
+
+  package:
+    name: wheel/sdist build and fresh-install smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install build
+      - run: python -m build
+      - run: ls dist/benching-*.whl dist/benching-*.tar.gz
+      - name: fresh non-editable install outside the checkout
+        run: |
+          python -m venv "$RUNNER_TEMP/smoke-venv"
+          "$RUNNER_TEMP/smoke-venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/smoke-venv/bin/python" -m pip install "$GITHUB_WORKSPACE"/dist/benching-*.whl
+      - name: installed CLI smoke (no repository source on path)
+        run: |
+          cd "$RUNNER_TEMP"
+          BIN="$RUNNER_TEMP/smoke-venv/bin/benching"
+          "$BIN" --help
+          "$BIN" doctor
+          "$BIN" runs
+          "$BIN" results --help
+          "$BIN" tokenizer --help
+      - name: packaged defaults load without the checkout
+        run: |
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/smoke-venv/bin/python" -c "from benching.benchmark.config import load_yaml; from benching.benchmark.contract import load_schema; assert load_yaml()['benchmark']['name']; assert load_schema('summary-v1.schema.json')['\$id']; print('resources-ok')"
+
+  release-hygiene:
+    name: license/provenance/package hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - run: pip install pytest build
+      # The dashboard-bundle marker subtest skips here when .next is absent;
+      # dashboard.yml enforces the same marker against a real production build.
+      - run: python -m pytest tests/test_release_hygiene.py -q

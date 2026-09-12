@@ -1,0 +1,48 @@
+name: dashboard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dashboard/**"
+      - "src/benching/benchmark/schemas/**"
+      - "examples/artifacts/**"
+      - ".github/workflows/dashboard.yml"
+  pull_request:
+    paths:
+      - "dashboard/**"
+      - "src/benching/benchmark/schemas/**"
+      - "examples/artifacts/**"
+      - ".github/workflows/dashboard.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard:
+    name: install, test, typecheck, production build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Current LTS satisfying Next's engines (>=18.18); single pinned
+          # version, no matrix: the bundle is built once, identically.
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      # Clean install from the lockfile; no Python runtime required, only
+      # the shared schema/example files already in the checkout.
+      - run: npm ci
+      - run: npm test
+      - run: npm exec -- tsc --noEmit --incremental false
+      - run: npm run build
+      - name: production bundle carries no test secret markers
+        run: |
+          if grep -rq "DO_NOT_EXPOSE" .next --include="*.js"; then
+            echo "test secret marker leaked into the production bundle"
+            exit 1
+          fi
